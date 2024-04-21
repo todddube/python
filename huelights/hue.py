@@ -15,13 +15,8 @@ hue = Hue(bridge_ip=bridgeIP, username=bridgeUsername)
 
 # Get all the lights connected to the bridge
 lights = hue.get_lights()
-for light in lights:
-    if light.is_on == True:
-        light.off()
-    elif light.on() == False:
-        light.on()
-    
-    print(light.name, light.is_on)
+for light in lights:    
+    print(light.name, light.id_, light.is_on, )
     #print(hue.get_light(x))
 print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
