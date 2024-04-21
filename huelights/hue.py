@@ -16,7 +16,7 @@ hue = Hue(bridge_ip=bridgeIP, username=bridgeUsername)
 # Get all the lights connected to the bridge
 lights = hue.get_lights()
 for light in lights:
-    print(light.name)
+    print(light.name, light.on)
     #print(hue.get_light(x))
 print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
