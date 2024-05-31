@@ -29,5 +29,5 @@ print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
 rndBrightness = random.Random(255)-1
 for x in range(255):
-    groups[3].set_brightness(x-254)
+    groups[3].set_brightness(x-2)
     time.sleep(0.01)
