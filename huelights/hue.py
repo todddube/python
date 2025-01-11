@@ -27,7 +27,7 @@ for group in groups:
     print(group.name, group.id_)
 print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-rndBrightness = random.Random(255)-1
+rndBrightness = random.Random(254)
 for x in range(255):
     groups[3].set_brightness(x-2)
     time.sleep(0.01)
