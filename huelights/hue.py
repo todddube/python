@@ -1,5 +1,6 @@
 from huesdk import Hue
 import urllib3, random, time
+import colorsys
 
 # disbale https warnings
 urllib3.disable_warnings()
@@ -12,22 +13,19 @@ if bridgeUsername == "":
     print(username)
   
 hue = Hue(bridge_ip=bridgeIP, username=bridgeUsername)
+# Get lights in the room "Front Room"
+lights = hue.get_lights_by_room("Front Room")
 
-# Get all the lights connected to the bridge
-lights = hue.get_lights()
-for light in lights:    
-    print(light.name, light.id_, light.is_on)
-    #print(hue.get_light(x))
-print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-# get light with name
-#light = hue.get_light(name="Room 1")
+# Function to change light color
+def change_light_color(light):
+    hue_value = random.randint(0, 65535)
+    sat_value = random.randint(200, 254)
+    bri_value = random.randint(150, 254)
+    light.set_state(hue=hue_value, sat=sat_value, bri=bri_value)
 
-groups = hue.get_groups()
-for group in groups:
-    print(group.name, group.id_)
-print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-
-rndBrightness = random.Random(254)
-for x in range(255):
-    groups[3].set_brightness(x-2)
-    time.sleep(0.01)
+# Change lights color randomly for 60 seconds
+end_time = time.time() + 60
+while time.time() < end_time:
+    for light in lights:
+        change_light_color(light)
+    time.sleep(5)
