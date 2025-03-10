@@ -1,6 +1,7 @@
 import pygame
 import math
 import random
+import time
 
 # Initialize Pygame
 pygame.init()
@@ -14,20 +15,29 @@ pygame.display.set_caption("Asteroids")
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
+
+# Initialize Font
+pygame.font.init()
+FONT = pygame.font.SysFont('Arial', 30)
+
 # Asteroid class
 class Asteroid:
-    def __init__(self):
-        # Random position at screen edge
-        if random.random() < 0.5:
-            self.x = random.choice([0, WIDTH])
-            self.y = random.randint(0, HEIGHT)
+    def __init__(self, x=None, y=None, size=None):
+        # Random position at screen edge if not specified
+        if x is None or y is None:
+            if random.random() < 0.5:
+                self.x = random.choice([0, WIDTH])
+                self.y = random.randint(0, HEIGHT)
+            else:
+                self.x = random.randint(0, WIDTH)
+                self.y = random.choice([0, HEIGHT])
         else:
-            self.x = random.randint(0, WIDTH)
-            self.y = random.choice([0, HEIGHT])
+            self.x = x
+            self.y = y
         
         self.angle = random.randint(0, 360)
         self.speed = random.uniform(1, 3)
-        self.size = random.randint(20, 50)
+        self.size = size if size else random.randint(20, 50)
         self.points = []
         
         # Create irregular polygon
@@ -47,6 +57,15 @@ class Asteroid:
     def draw(self, surface):
         points = [(self.x + x, self.y + y) for x, y in self.points]
         pygame.draw.polygon(surface, WHITE, points, 2)
+
+    def get_rect(self):
+        points = [(self.x + x, self.y + y) for x, y in self.points]
+        min_x = min(p[0] for p in points)
+        max_x = max(p[0] for p in points)
+        min_y = min(p[1] for p in points)
+        max_y = max(p[1] for p in points)
+        return pygame.Rect(min_x, min_y, max_x - min_x, max_y - min_y)
+
 # Player ship
 class Ship:
     def __init__(self):
@@ -55,6 +74,9 @@ class Ship:
         self.angle = 0
         self.speed = 0
         self.points = [(0, -20), (-10, 10), (10, 10)]
+        self.exploding = False
+        self.explosion_particles = []
+        self.explosion_start = 0
         
     def rotate(self, direction):
         self.angle += direction * 5
@@ -68,14 +90,47 @@ class Ship:
         self.x %= WIDTH
         self.y %= HEIGHT
         
+    def start_explosion(self):
+        if not self.exploding:
+            self.exploding = True
+            self.explosion_start = time.time()
+            # Create explosion particles from ship points
+            for _ in range(20):
+                particle = Particle(
+                    self.x, 
+                    self.y,
+                    random.uniform(0, 360),
+                    random.uniform(1, 5)
+                )
+                self.explosion_particles.append(particle)
+    
     def draw(self, surface):
+        if self.exploding:
+            # Draw explosion particles
+            for particle in self.explosion_particles:
+                particle.move()
+                particle.draw(surface)
+        else:
+            rotated_points = []
+            for point in self.points:
+                rad = math.radians(self.angle)
+                x = point[0] * math.cos(rad) - point[1] * math.sin(rad)
+                y = point[0] * math.sin(rad) + point[1] * math.cos(rad)
+                rotated_points.append((self.x + x, self.y + y))
+            pygame.draw.polygon(surface, WHITE, rotated_points, 2)
+
+    def get_rect(self):
         rotated_points = []
         for point in self.points:
             rad = math.radians(self.angle)
             x = point[0] * math.cos(rad) - point[1] * math.sin(rad)
             y = point[0] * math.sin(rad) + point[1] * math.cos(rad)
             rotated_points.append((self.x + x, self.y + y))
-        pygame.draw.polygon(surface, WHITE, rotated_points, 2)
+        min_x = min(p[0] for p in rotated_points)
+        max_x = max(p[0] for p in rotated_points)
+        min_y = min(p[1] for p in rotated_points)
+        max_y = max(p[1] for p in rotated_points)
+        return pygame.Rect(min_x, min_y, max_x - min_x, max_y - min_y)
 
 # Missile class
 class Missile:
@@ -93,12 +148,34 @@ class Missile:
     def draw(self, surface):
         pygame.draw.circle(surface, WHITE, (int(self.x), int(self.y)), 2)
 
+# Particle class
+class Particle:
+    def __init__(self, x, y, angle, speed):
+        self.x = x
+        self.y = y
+        self.angle = angle
+        self.speed = speed
+        self.lifetime = 255  # Fade out counter
+        
+    def move(self):
+        rad = math.radians(self.angle)
+        self.x += self.speed * math.sin(rad)
+        self.y -= self.speed * math.cos(rad)
+        self.lifetime -= 3
+        
+    def draw(self, surface):
+        if self.lifetime > 0:
+            color = (255, self.lifetime, self.lifetime)
+            pygame.draw.circle(surface, color, (int(self.x), int(self.y)), 2)
+
 # Game loop
 def main():
     clock = pygame.time.Clock()
     ship = Ship()
     missiles = []
+    asteroids = [Asteroid() for _ in range(5)]
     running = True
+    score = 0  # Initialize score
     
     while running:
         # Event handling
@@ -127,12 +204,38 @@ def main():
             if (missile.x < 0 or missile.x > WIDTH or 
                 missile.y < 0 or missile.y > HEIGHT):
                 missiles.remove(missile)
-        
+                continue
+                
+            # Check missile collisions with asteroids
+            for asteroid in asteroids[:]:
+                if asteroid.get_rect().collidepoint(missile.x, missile.y):
+                    missiles.remove(missile)
+                    asteroids.remove(asteroid)
+                    score += 10  # Add 10 points for hitting asteroid
+                    
+                    # Create smaller asteroids if size permits
+                    if asteroid.size > 10:
+                        for _ in range(3):
+                            new_size = asteroid.size // 2
+                    break
+        for asteroid in asteroids:
+            asteroid.move()
+            if ship.get_rect().colliderect(asteroid.get_rect()) and not ship.exploding:
+                ship.start_explosion()
+                
+        # Update explosion state
+        if ship.exploding:
+            if time.time() - ship.explosion_start > 4:  # 4 seconds explosion
+                running = False
+                # running = True
+            
         # Draw
         screen.fill(BLACK)
         ship.draw(screen)
         for missile in missiles:
             missile.draw(screen)
+        for asteroid in asteroids:
+            asteroid.draw(screen)
         pygame.display.flip()
         
         # Control game speed
