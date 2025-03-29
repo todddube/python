@@ -217,6 +217,12 @@ def main():
                     if asteroid.size > 10:
                         for _ in range(3):
                             new_size = asteroid.size // 2
+                            new_asteroid = Asteroid(
+                                x=asteroid.x + random.uniform(-20, 20),
+                                y=asteroid.y + random.uniform(-20, 20),
+                                size=new_size
+                            )
+                            asteroids.append(new_asteroid)
                     break
         for asteroid in asteroids:
             asteroid.move()
@@ -231,6 +237,11 @@ def main():
             
         # Draw
         screen.fill(BLACK)
+        
+        # Draw score at top of screen
+        score_text = FONT.render(f'Score: {score}', True, WHITE)
+        screen.blit(score_text, (10, 10))
+        
         ship.draw(screen)
         for missile in missiles:
             missile.draw(screen)
