@@ -1,4 +1,5 @@
 from time import sleep
+import streamlit as st
 import requests
 import pyhocon
 
@@ -24,6 +25,7 @@ def get_ollama_response(prompt, model="llama3"):
         return f"Error: {e}"
 
 class Agent:
+    """Agents class defining agent name and personality."""
     def __init__(self, name, personality):
         self.name = name
         self.personality = personality
@@ -68,29 +70,118 @@ class Agent:
             return todd, frank, conversation_starters
         except Exception as e:
             raise Exception(f"Error loading configuration: {e}")
+        
+def init_streamlit():
+    """Initialize Streamlit configuration and check services."""
+    # Configure Streamlit theme
+    st.set_page_config(
+        page_title="Agentic Conversation Simulator",
+        page_icon="🤖",
+        layout="centered",
+        initial_sidebar_state="expanded",
+    )
 
-# get config and create agents
-todd, frank, conversation_starters = Agent.get_config()
-    
-for topic in conversation_starters:
-    
-    print(f"\nNew topic: {topic}")
-    print("=" * 75)
-    
-    # Todd starts
-    response = todd.respond(topic)
-    print(f"Todd >>>>>: \n {response}")
-    print("-" * 75)
-    sleep(1)  # Add delay for readability
-    
-    # Frank responds to Todd
-    response = frank.respond(f"Frank >>>>>: \n {response}")
-    print("-" * 75)
+    # Add status check for Ollama service
+    try:
+        response = requests.get('http://localhost:11434/api/version')
+        if response.status_code == 200:
+            st.sidebar.success("🟢 Ollama service is running")
+        else:
+            st.sidebar.error("🔴 Ollama service is not responding properly")
+    except requests.exceptions.RequestException:
+        st.sidebar.error("🔴 Ollama service is not running")
 
-    sleep(1)
+    # Check model availability
+    try:
+        response = requests.get('http://localhost:11434/api/tags')
+        if response.status_code == 200:
+            models = response.json()
+            st.sidebar.write("Available Models:")
+            for model in models['models']:
+                st.sidebar.write(f"- {model['name']}")
+    except requests.exceptions.RequestException:
+        st.sidebar.warning("⚠️ Cannot fetch available models")
+        
+    # Add animated conversation visualization
+    st.sidebar.markdown("### Conversation Status")
+    cols = st.sidebar.columns([1, 1, 1])
+    with cols[0]:
+        st.markdown("Agent 🤖")
+    with cols[1]:
+        st.markdown("⚡")
+    with cols[2]:
+        st.markdown("Ollama 🤖")
     
-    # Todd responds to Frank
-    response = todd.respond(f"Todd >>>>>: \n {response}")
-    print(f"Todd >>>>>:\n  {response}")
-    print("-" * 75)
-    sleep(1)
+    # Create animation container
+    animation_container = st.sidebar.empty()
+    
+    # Simple animation frames
+    frames = ["🔵   ⬜   ⬜",
+             "⬜   🔵   ⬜", 
+             "⬜   ⬜   🔵"]
+    
+    # Show animation frame
+    current_frame = 0
+    animation_container.markdown(frames[current_frame])
+    sleep(0.1)  # Brief pause between frames
+
+def main():
+    init_streamlit()
+        
+    # Initialize session state
+    if 'conversation' not in st.session_state:
+        st.session_state.conversation = []
+        
+    # Get agents and topics
+    try:
+        todd, frank, conversation_starters = Agent.get_config()
+        
+        # Display current conversation starters in sidebar
+        st.sidebar.markdown("### Available Topics")
+        for starter in conversation_starters:
+            st.sidebar.markdown(f"- {starter}")
+        st.sidebar.markdown("---")
+        
+        # Display agents status in sidebar
+        st.sidebar.markdown("### Agents Personality")
+        st.sidebar.markdown(f"**Todd**: - {todd.personality}")
+        st.sidebar.markdown(f"**Frank**: - {frank.personality}")
+        st.sidebar.markdown("---")
+        
+        # Topic selector
+        topic = st.selectbox("Select a conversation topic:", conversation_starters)
+        
+        if st.button("Start Conversation"):
+            st.session_state.conversation = []  # Clear previous conversation
+            
+            # Display the topic
+            st.subheader(f"Topic: {topic}")
+            
+            # Todd starts
+            response = todd.respond(topic)
+            st.session_state.conversation.append(("Todd", response))
+            
+            # Frank responds
+            response = frank.respond(response)
+            st.session_state.conversation.append(("Frank", response))
+            
+            # Todd responds again
+            response = todd.respond(response)
+            st.session_state.conversation.append(("Todd", response))
+        
+            # Display conversation
+            for speaker, message in st.session_state.conversation:
+                with st.container():
+                    if speaker == "Todd":
+                        st.markdown(f"**Todd**:")
+                        st.markdown(f">{message}", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"**Frank**:")
+                        st.markdown(f">{message}", unsafe_allow_html=True)
+                    st.markdown("---")
+                
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+            
+if __name__ == "__main__":
+    main()
