@@ -49,9 +49,9 @@ def get_ollama_response(prompt, model="llama3"):
             raise KeyError("Key 'response' not found in the API response.")
 
     except requests.exceptions.RequestException as e:
-        return f"Error: Failed to connect to the API. {e}"
+        return f"Error get_ollama_response: Failed to connect to the API. {e}"
     except KeyError as e:
-        return f"Error: {e}"
+        return f"Error get_ollama_response: {e}"
 
 class Agent:
     """Agents class defining agent name and personality."""
@@ -170,10 +170,11 @@ def main():
             # Create placeholder for conversation
             conversation_placeholder = st.empty()
             
-            # toddai starts
-            with st.spinner("toddai is thinking..."):
-                response = toddai.respond(topic)
-                st.session_state.conversation.append(("toddai", response))
+            for agent in agents:
+                # st.session_state.conversation.append((agent.name, "Thinking..."))
+                with st.spinner(f"Waiting for {agent.name}'s response..."):
+                    response = agent.respond(topic)
+                    st.session_state.conversation.append((agent.name, response))
                 # Update display
                 with conversation_placeholder.container():
                     for speaker, msg in st.session_state.conversation:
@@ -181,30 +182,9 @@ def main():
                         st.markdown(f">{msg}", unsafe_allow_html=True)
                         st.markdown("---")
             
-            # frankai responds
-            with st.spinner("frankai is thinking..."):
-                response = frankai.respond(response)
-                st.session_state.conversation.append(("frankai", response))
-                # Update display
-                with conversation_placeholder.container():
-                    for speaker, msg in st.session_state.conversation:
-                        st.markdown(f"**{speaker}**:")
-                        st.markdown(f">{msg}", unsafe_allow_html=True)
-                        st.markdown("---")
             
-            # toddai responds again
-            with st.spinner("toddai is thinking..."):
-                response = toddai.respond(response)
-                st.session_state.conversation.append(("toddai", response))
-                # Update display
-                with conversation_placeholder.container():
-                    for speaker, msg in st.session_state.conversation:
-                        st.markdown(f"**{speaker}**:")
-                        st.markdown(f">{msg}", unsafe_allow_html=True)
-                        st.markdown("---")
-
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(f"Error Main Thread: {str(e)}")
             
 if __name__ == "__main__":
     import threading
