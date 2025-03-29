@@ -13,6 +13,6 @@ conversation {
     starters = [
         "What do you think about AI and agentic architectures?",
         "Why are you concerned about privacy?",
-        "What does it mean to hallucinate with AI?"
+        "Will CarMax be sucessful with AI?"
     ]
 }

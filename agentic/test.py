@@ -85,13 +85,12 @@ for topic in conversation_starters:
     
     # Frank responds to Todd
     response = frank.respond(f"Frank >>>>>: \n {response}")
-    print(f"Frank >>>>>: {response}")
     print("-" * 75)
 
     sleep(1)
     
     # Todd responds to Frank
     response = todd.respond(f"Todd >>>>>: \n {response}")
-    print(f"Todd: {response}")
+    print(f"Todd >>>>>:\n  {response}")
     print("-" * 75)
     sleep(1)
