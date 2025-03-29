@@ -1,10 +1,30 @@
 from time import sleep
 from time import time
+import webbrowser
+import os
+import subprocess
 import streamlit as st
 import requests
 import pyhocon
 
+
+def open_chromium():
+    """Open Chromium browser and navigate to Streamlit app."""
+    chromium_path = r"C:\Program Files\Chromium\chrome.exe"  # Adjust path as needed
+    url = "http://localhost:8501"  # Default Streamlit port
+    
+    try:
+        # Start Chromium
+        webbrowser.register('chromium', None, 
+                           webbrowser.BackgroundBrowser(chromium_path))
+        webbrowser.get('chromium').open(url) 
+    except Exception as e:
+        print(f"Error opening Chromium: {e}")
+        # Fallback to default browser
+        webbrowser.open(url)
+
 def get_ollama_response(prompt, model="llama3"):
+    start_time = time()
     try:
         response = requests.post('http://localhost:11434/api/generate',
                                json={
@@ -16,10 +36,18 @@ def get_ollama_response(prompt, model="llama3"):
                                })
         response.raise_for_status()  # Raise an HTTPError for bad responses (4xx and 5xx)
         json_response = response.json()
+        
+        # Update sidebar with query info
+        with st.sidebar.expander("🔄 Recent Activity", expanded=True):
+            st.write(f"Query sent: {prompt[:100]}...")
+            st.write(f"Response time: {time() - start_time:.2f} seconds")
+            #st.write(f"Epochs: {time():.0f}")
+            
         if 'response' in json_response:
             return json_response['response']
         else:
             raise KeyError("Key 'response' not found in the API response.")
+
     except requests.exceptions.RequestException as e:
         return f"Error: Failed to connect to the API. {e}"
     except KeyError as e:
@@ -52,23 +80,26 @@ class Agent:
     def get_config():
         """Load and return configuration from HOCON file."""
         try:
-            config = pyhocon.ConfigFactory.parse_file(r'c:\\Users\\todd\\OneDrive\\Documents\\GitHub\\python\\agentic\\agents_config.hocon')
-            
-            # Create agents from config
-            todd = Agent(
-                name=config['agents.todd.name'],
-                personality=config['agents.todd.personality']
-            )
-
-            frank = Agent(
-                name=config['agents.frank.name'],
-                personality=config['agents.frank.personality']
-            )
+            # Get the directory of the current script
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            config_path = os.path.join(current_dir, 'agents_config.hocon')
+            config = pyhocon.ConfigFactory.parse_file(config_path)
+            # Create empty list to store all agents
+            agents = []
+                        
+            # Iterate through all agent configs and create agents
+            for agent_key in config['agents']:
+                agent_config = config['agents'][agent_key]
+                agent = Agent(
+                    name=agent_config['name'],
+                    personality=agent_config['personality']
+                )
+                agents.append(agent)
 
             # Get conversation starters
             conversation_starters = config['conversation.starters']
             
-            return todd, frank, conversation_starters
+            return agents, conversation_starters
         except Exception as e:
             raise Exception(f"Error loading configuration: {e}")
         
@@ -89,6 +120,7 @@ def init_streamlit():
             st.sidebar.success("🟢 Ollama service is running")
         else:
             st.sidebar.error("🔴 Ollama service is not responding properly")
+            st.error("Ollama service is not responding properly. Please check if it's running correctly.")
     except requests.exceptions.RequestException:
         st.sidebar.error("🔴 Ollama service is not running")
 
@@ -113,7 +145,13 @@ def main():
         
     # Get agents and topics
     try:
-        todd, frank, conversation_starters = Agent.get_config()
+        agents, conversation_starters = Agent.get_config()
+        
+        # Display agents status in sidebar
+        st.sidebar.markdown("### Agents & Personality")
+        for agent in agents:
+            st.sidebar.markdown(f"**{agent.name}**: {agent.personality}")
+        st.sidebar.markdown("---")
         
         # Display current conversation starters in sidebar
         st.sidebar.markdown("### Available Topics")
@@ -121,46 +159,55 @@ def main():
             st.sidebar.markdown(f"- {starter}")
         st.sidebar.markdown("---")
         
-        # Display agents status in sidebar
-        st.sidebar.markdown("### Agents Personality")
-        st.sidebar.markdown(f"**Todd**: - {todd.personality}")
-        st.sidebar.markdown(f"**Frank**: - {frank.personality}")
-        st.sidebar.markdown("---")
-        
         # Topic selector
         topic = st.selectbox("Select a conversation topic:", conversation_starters)
         
         if st.button("Start Conversation"):
             st.session_state.conversation = []  # Clear previous conversation
-            
             # Display the topic
             st.subheader(f"Topic: {topic}")
             
-            # Todd starts
-            response = todd.respond(topic)
-            st.session_state.conversation.append(("Todd", response))
+            # Create placeholder for conversation
+            conversation_placeholder = st.empty()
             
-            # Frank responds
-            response = frank.respond(response)
-            st.session_state.conversation.append(("Frank", response))
+            # toddai starts
+            with st.spinner("toddai is thinking..."):
+                response = toddai.respond(topic)
+                st.session_state.conversation.append(("toddai", response))
+                # Update display
+                with conversation_placeholder.container():
+                    for speaker, msg in st.session_state.conversation:
+                        st.markdown(f"**{speaker}**:")
+                        st.markdown(f">{msg}", unsafe_allow_html=True)
+                        st.markdown("---")
             
-            # Todd responds again
-            response = todd.respond(response)
-            st.session_state.conversation.append(("Todd", response))
-        
-            # Display conversation
-            for speaker, message in st.session_state.conversation:
-                with st.container():
-                    if speaker == "Todd":
-                        st.markdown(f"**Todd**:")
-                        st.markdown(f">{message}", unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"**Frank**:")
-                        st.markdown(f">{message}", unsafe_allow_html=True)
-                    st.markdown("---")
-                
+            # frankai responds
+            with st.spinner("frankai is thinking..."):
+                response = frankai.respond(response)
+                st.session_state.conversation.append(("frankai", response))
+                # Update display
+                with conversation_placeholder.container():
+                    for speaker, msg in st.session_state.conversation:
+                        st.markdown(f"**{speaker}**:")
+                        st.markdown(f">{msg}", unsafe_allow_html=True)
+                        st.markdown("---")
+            
+            # toddai responds again
+            with st.spinner("toddai is thinking..."):
+                response = toddai.respond(response)
+                st.session_state.conversation.append(("toddai", response))
+                # Update display
+                with conversation_placeholder.container():
+                    for speaker, msg in st.session_state.conversation:
+                        st.markdown(f"**{speaker}**:")
+                        st.markdown(f">{msg}", unsafe_allow_html=True)
+                        st.markdown("---")
+
     except Exception as e:
         st.error(f"Error: {str(e)}")
             
 if __name__ == "__main__":
+    import threading
+    threading.Timer(2.0, open_chromium).start()  # Delay to allow Streamlit to start
+    
     main()
