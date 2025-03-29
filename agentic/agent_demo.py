@@ -1,4 +1,5 @@
 from time import sleep
+from time import time
 import streamlit as st
 import requests
 import pyhocon
@@ -102,28 +103,6 @@ def init_streamlit():
     except requests.exceptions.RequestException:
         st.sidebar.warning("⚠️ Cannot fetch available models")
         
-    # Add animated conversation visualization
-    st.sidebar.markdown("### Conversation Status")
-    cols = st.sidebar.columns([1, 1, 1])
-    with cols[0]:
-        st.markdown("Agent 🤖")
-    with cols[1]:
-        st.markdown("⚡")
-    with cols[2]:
-        st.markdown("Ollama 🤖")
-    
-    # Create animation container
-    animation_container = st.sidebar.empty()
-    
-    # Simple animation frames
-    frames = ["🔵   ⬜   ⬜",
-             "⬜   🔵   ⬜", 
-             "⬜   ⬜   🔵"]
-    
-    # Show animation frame
-    current_frame = 0
-    animation_container.markdown(frames[current_frame])
-    sleep(0.1)  # Brief pause between frames
 
 def main():
     init_streamlit()
