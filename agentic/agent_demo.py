@@ -373,6 +373,9 @@ def main():
             
             # Create placeholder for conversation
             conversation_placeholder = st.empty()
+            
+            # Create vehicle agent first, before the conversation starts
+            vehicle_agent = VehicleAgent()
          
             # Iterate the specified number of times
             for _ in range(num_iterations):
@@ -387,10 +390,7 @@ def main():
                             st.markdown(f">{msg}", unsafe_allow_html=True)
                             st.markdown("---")
            
-            # Create vehicle agent for analysis first
-            vehicle_agent = VehicleAgent()
-            
-            # Then analyze conversation and search Carmax if vehicles mentioned
+            # Now analyze conversation since vehicle_agent exists
             vehicle_mentions = vehicle_agent.analyze_conversation(st.session_state.conversation)
             if vehicle_mentions:
                 with st.spinner("Searching CarMax..."):
@@ -398,7 +398,7 @@ def main():
                     st.write(search_result)
                 
     except Exception as e:
-        st.error(f"Error Main Thread: {str(e)}")
+        st.error(f"Error Main Function: {str(e)}")
         
 # 
 if __name__ == "__main__":
