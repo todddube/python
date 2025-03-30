@@ -8,7 +8,37 @@ import streamlit as st
 import requests
 import pyhocon
 
+class CarmaxSearchAgent:
+    def __init__(self, max_price=None, min_price=None):
+        self.base_url = "https://www.carmax.com/cars"
+        self.max_price = max_price
+        self.min_price = min_price
 
+    def search_vehicles(self, query):
+        """Search Carmax for vehicles matching query"""
+        # updated to use carmax search URL
+        try:
+            url = f"{self.base_url}?search={query}&showreservedcars=false"
+            if self.max_price:
+                url += f"&price-max={self.max_price}"
+            if self.min_price:
+                url += f"&price-min={self.min_price}"
+                
+            webbrowser.open(url)
+            return f"Opening Carmax search for: {query}"
+            
+        except Exception as e:
+            return f"Error searching Carmax: {str(e)}"
+
+    def get_recommendations(self, preferences):
+        """Get vehicle recommendations based on preferences"""
+        prompt = f"""
+        Based on these preferences: {preferences}
+        Suggest 3 specific vehicle models available at Carmax.
+        Include year ranges and price estimates.
+        """
+        return get_ollama_response(prompt)
+    
 def open_chromium():
     """Open Chromium browser and navigate to Streamlit app."""
     chromium_path = r"C:\Program Files\Chromium\chrome.exe"  # Adjust path as needed
@@ -39,9 +69,9 @@ def get_ollama_response(prompt, model="llama3"):
         json_response = response.json()
         
         # Update sidebar with query info
-        with st.sidebar.expander("🔄 Recent Activity", expanded=True):
-            st.write(f"Query sent: {prompt[:50]}...")
-            st.write(f"Response time: {time() - start_time:.2f} seconds")
+        # with st.sidebar.expander("🔄 Recent Activity", expanded=True):
+        #     st.write(f"Query sent: {prompt[:50]}...")
+        #     st.write(f"Response time: {time() - start_time:.2f} seconds")
             
         if 'response' in json_response:
             return json_response['response']
@@ -52,6 +82,47 @@ def get_ollama_response(prompt, model="llama3"):
         return f"Error get_ollama_response: Failed to connect to the API. {e}"
     except KeyError as e:
         return f"Error get_ollama_response: {e}"
+
+class VehicleAgent:
+    """Agent for handling vehicle-related tasks."""
+    def __init__(self, max_price=None, min_price=None):
+        self.carmax = CarmaxSearchAgent(max_price, min_price)
+        
+    def extract_mentions(self, text):
+        """Extract vehicle brands and models from text."""
+        prompt = f"""
+        Analyze this text and extract any car brands and their models.
+        Return only valid brand-model pairs, one per line.
+        Text: {text}
+        Format each line as: brand|model
+        Examples: toyota|camry, honda|civic
+        """
+        response = get_ollama_response(prompt)
+        vehicle_pairs = []
+        
+        # Process response into pairs
+        for line in response.split('\n'):
+            if '|' in line:
+                brand, model = line.strip().split('|')
+                if brand and model:
+                    vehicle_pairs.append(f"{brand.strip()} {model.strip()}")
+        
+        return vehicle_pairs
+
+    def analyze_conversation(self, conversation):
+        """Analyze conversation for vehicle mentions."""
+        vehicle_mentions = []
+        for _, msg in conversation:
+            pairs = self.extract_mentions(msg)
+            vehicle_mentions.extend(pairs)
+        return list(set(vehicle_mentions))  # Remove duplicates
+
+    def search_vehicles(self, vehicles):
+        """Search for vehicles on Carmax."""
+        if not vehicles:
+            return None
+        search_query = ", ".join(vehicles)
+        return self.carmax.search_vehicles(search_query)
 
 class Agent:
     """Agents class defining agent name and personality."""
@@ -107,13 +178,67 @@ class Agent:
         
 def init_streamlit():
     """Initialize Streamlit configuration and check services."""
-    # Configure Streamlit theme
-    st.set_page_config(
-        page_title="Agentic Conversation Simulator",
-        page_icon="🤖",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
+    try:
+        # Set page config first
+        st.set_page_config(
+            page_title="Agentic Conversation Simulator",
+            page_icon="🚗",
+            layout="wide",
+            initial_sidebar_state="auto"
+        )
+        
+        # Add menu items to sidebar explicitly
+        with st.sidebar:
+            with st.expander("🏈 Menu", expanded=False):
+                st.markdown("### Help")
+                st.markdown("[GitHub Repository](https://github.com/todddube)")
+                st.markdown("### Report Issues")
+                st.markdown("[Submit Bug Report](https://github.com/todddube/python/issues)")
+                st.markdown("### About")
+                st.markdown("""
+                    # Agentic Conversation Simulator
+                    
+                    A multi-agent conversation simulator using Ollama LLM.
+                    
+                    * Multiple AI agents with distinct personalities
+                    * CarMax integration for vehicle searches
+                    * Configurable conversation topics
+                    """)
+        
+        # Keep existing styling
+        st.markdown("""
+            <style>
+            /* Carmax.com colors */
+            :root {
+                --primary-color: #004c97;      /* Carmax primary blue */
+                --secondary-color: #0072ce;    /* Carmax secondary blue */
+                --accent-color: #00a3e0;       /* Carmax accent blue */
+                --background-color: #ffffff;    /* White background */
+                --text-color: #333333;         /* Dark gray text */
+                --link-color: #0072ce;         /* Link color */
+            }
+            /* Apply colors */
+            .stApp {
+                background-color: var(--background-color);
+                color: var(--text-color);
+            }
+            .stButton>button {
+                background-color: var(--primary-color);
+                color: white;
+            }
+            .stButton>button:hover {
+                background-color: var(--secondary-color);
+            }
+            a {
+                color: var(--link-color);
+            }
+            </style>
+        """, unsafe_allow_html=True)
+        
+    except Exception as e:
+        st.warning("⚠️ Error initializing Streamlit configuration")
+        print(f"Error in init_streamlit: {e}")
+
 def ollama_check():
     """Check if the Ollama service is running."""
     
@@ -139,13 +264,34 @@ def ollama_check():
                 st.sidebar.write(f"- {model['name']}")
     except requests.exceptions.RequestException:
         st.sidebar.warning("⚠️ Cannot fetch available models")
-        
+
+def setup_agents(agents):
+    # Display agents status in sidebar
+    st.sidebar.markdown("### Agents & Personality")
+    for agent in agents:
+        with st.sidebar.expander(f"**{agent.name}**", expanded=False):
+            st.write(agent.personality)
+        # Create agent-specific avatars/emojis
+        agent_avatars = {
+            "architect": "👨‍🏫",
+            "carmax": "🚗",
+            "engineer": "🤖"
+        }
+        avatar = agent_avatars.get(agent.kind, "🧑")  # Default avatar if name not found
+        st.sidebar.markdown(f"{avatar} 🟢 Online")
+    st.sidebar.markdown("---")
 
 def main():
-    # Initialize Streamlit app
     # Check if the Ollama service is running
-    init_streamlit()
     ollama_check()
+    
+    # Get agents and topics
+    try:
+        agents, conversation_starters = Agent.get_config()
+        setup_agents(agents)
+    except Exception as e:
+        st.error(f"Error loading agents: {str(e)}")
+        return
     
     st.title("Agentic Conversation Simulator")
         
@@ -156,30 +302,27 @@ def main():
     # Get agents and topics
     try:
         agents, conversation_starters = Agent.get_config()
-        
-        # Display agents status in sidebar
-        st.sidebar.markdown("### Agents & Personality")
-        for agent in agents:
-            with st.sidebar.expander(f"**{agent.name}**", expanded=False):
-                st.write(agent.personality)
-            # Create agent-specific avatars/emojis
-            agent_avatars = {
-                "architect": "👨‍🏫",
-                "carmax": "🚗",
-                "engineer": "🤖"
-            }
-            avatar = agent_avatars.get(agent.kind, "🧑")  # Default avatar if name not found
-            st.sidebar.markdown(f"{avatar} 🟢 Online")
-        st.sidebar.markdown("---")
-        
-        # Display current conversation starters in sidebar
-        st.sidebar.markdown("### Available Topics")
-        for starter in conversation_starters:
-            st.sidebar.markdown(f"- {starter}")
-        st.sidebar.markdown("---")
-        
+    
         # Topic selector
         topic = st.selectbox("Select a conversation topic:", conversation_starters)
+        
+          # Get number of iterations from user
+        num_iterations = st.number_input("Number of conversation rounds:", min_value=1, max_value=10, value=1)
+        
+        # Agent selector
+        selected_agents = st.multiselect(
+            "Select agents to participate (minimum 2):",
+            options=[agent.name for agent in agents],
+            default=[agents[0].name, agents[1].name]
+        )
+
+        # Validate minimum number of agents
+        if len(selected_agents) < 2:
+            st.error("Please select at least 2 agents to continue")
+            return
+
+        # Filter agents based on selection
+        agents = [agent for agent in agents if agent.name in selected_agents]
         
         if st.button("Start Conversation"):
             st.session_state.conversation = []  # Clear previous conversation
@@ -188,72 +331,37 @@ def main():
             
             # Create placeholder for conversation
             conversation_placeholder = st.empty()
-            
-            for agent in agents:
-                # st.session_state.conversation.append((agent.name, "Thinking..."))
-                with st.spinner(f"Waiting for {agent.name}'s response..."):
-                    response = agent.respond(topic)
-                    st.session_state.conversation.append((agent.name, response))
-                # Update display
-                with conversation_placeholder.container():
-                    for speaker, msg in st.session_state.conversation:
-                        st.markdown(f"**{speaker}**:")
-                        st.markdown(f">{msg}", unsafe_allow_html=True)
-                        st.markdown("---")
+         
+            # Iterate the specified number of times
+            for _ in range(num_iterations):
+                
+                for agent in agents:
+                    # st.session_state.conversation.append((agent.name, "Thinking..."))
+                    with st.spinner(f"Waiting for {agent.name}'s response..."):
+                        response = agent.respond(topic)
+                        st.session_state.conversation.append((agent.name, response))
+                    # Update display
+                    with conversation_placeholder.container():
+                        for speaker, msg in st.session_state.conversation:
+                            st.markdown(f"**{speaker}**:")
+                            st.markdown(f">{msg}", unsafe_allow_html=True)
+                            st.markdown("---")
            
-            # Analyze conversation for vehicle mentions
-            vehicle_mentions = []
-            for _, msg in st.session_state.conversation:
-                # Common car brands and models (expand this list as needed)
-                car_brands = ["jeep", "toyota", "honda", "ford", "chevrolet", "bmw", "mercedes", "audi"]
-                msg_lower = msg.lower()
-                for brand in car_brands:
-                    if brand in msg_lower:
-                        vehicle_mentions.append(brand)
-
-            # Only perform Carmax search if vehicles were mentioned
+            # Create vehicle agent for analysis
+            vehicle_agent = VehicleAgent()
+            
+            # Analyze conversation and search Carmax if vehicles mentioned
+            vehicle_mentions = vehicle_agent.analyze_conversation(st.session_state.conversation)
             if vehicle_mentions:
-                carmax_agent = CarmaxSearchAgent()
-                search_result = carmax_agent.search_vehicles(" ".join(vehicle_mentions))
-                st.markdown("### Carmax Search Results")
-                st.write(search_result)
+                with st.spinner("Searching CarMax..."):
+                    search_result = vehicle_agent.search_vehicles(vehicle_mentions)
+                    st.write(search_result)
                 
     except Exception as e:
         st.error(f"Error Main Thread: {str(e)}")
-
-class CarmaxSearchAgent:
-    def __init__(self, max_price=None, min_price=None):
-        self.base_url = "https://www.carmax.com/cars"
-        self.max_price = max_price
-        self.min_price = min_price
-
-    def search_vehicles(self, query):
-        """Search Carmax for vehicles matching query"""
-        # updated to use carmax search URL
-        try:
-            url = f"{self.base_url}?search={query}&showreservedcars=false"
-            if self.max_price:
-                url += f"&price-max={self.max_price}"
-            if self.min_price:
-                url += f"&price-min={self.min_price}"
-                
-            webbrowser.open(url)
-            return f"Opening Carmax search for: {query}"
-            
-        except Exception as e:
-            return f"Error searching Carmax: {str(e)}"
-
-    def get_recommendations(self, preferences):
-        """Get vehicle recommendations based on preferences"""
-        prompt = f"""
-        Based on these preferences: {preferences}
-        Suggest 3 specific vehicle models available at Carmax.
-        Include year ranges and price estimates.
-        """
-        return get_ollama_response(prompt)
         
+# 
 if __name__ == "__main__":
-
-    threading.Timer(2.0, open_chromium).start()  # Delay to allow Streamlit to start
-    
+    init_streamlit()  # Must be the first Streamlit command
+    threading.Timer(2.0, open_chromium).start()
     main()
