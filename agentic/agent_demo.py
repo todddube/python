@@ -92,9 +92,24 @@ class VehicleAgent:
     def __init__(self, max_price=None, min_price=None):
         self.carmax = CarmaxSearchAgent(max_price, min_price)
         # Add vehicle agent status to sidebar
-        with st.sidebar.expander("🚗 Vehicle Agent", expanded=True):
-            st.write("Searches CarMax inventory and extracts vehicle mentions")
-        st.sidebar.markdown("🔎  Online")
+        st.sidebar.markdown("""
+            <style>
+            @keyframes colorChange {
+            0% { color: #FF0000; }
+            25% { color: #00FF00; }
+            50% { color: #0000FF; }
+            75% { color: #FF00FF; }
+            100% { color: #FF0000; }
+            }
+            .animated-text {
+            animation: colorChange 4s infinite;
+            font-weight: bold;
+            }
+            </style>
+            <h3><span class="animated-text">🚗 Vehicle Agent Online</span></h3>
+        """, unsafe_allow_html=True)
+        # st.write("Searches CarMax inventory and extracts vehicle mentions")
+        #st.sidebar.markdown("🔎  Online")
         
     def extract_mentions(self, text):
         """Extract vehicle brands and models from text."""
@@ -134,6 +149,9 @@ class VehicleAgent:
 
 class Agent:
     """Agents class defining agent name and personality."""
+    
+    # Default avatar for unknown agent types
+    DEFAULT_AVATAR = "👤"
     
     # Class-level avatar mapping
     agent_avatars = {
@@ -297,7 +315,7 @@ def setup_agents(agents):
     for agent in agents:
         with st.sidebar.expander(f"**{agent.name}**", expanded=False):
             st.write(agent.personality)
-        avatar = Agent.agent_avatars.get(agent.kind, "🧑")  # Default avatar if name not found
+        avatar = Agent.agent_avatars.get(agent.kind, Agent.DEFAULT_AVATAR)
 
 def main():
     # Check if the Ollama service is running
@@ -321,13 +339,7 @@ def main():
     try:
         agents, conversation_starters = Agent.get_config()
     
-        # Topic selector
-        topic = st.selectbox("Select a conversation topic:", conversation_starters)
-        
-          # Get number of iterations from user
-        num_iterations = st.number_input("Number of conversation rounds:", min_value=1, max_value=10, value=1)
-        
-        # Agent selector
+         # Agent selector
         selected_agents = st.multiselect(
             "Select agents to participate (minimum 2):",
             options=[agent.name for agent in agents],
@@ -338,7 +350,13 @@ def main():
         if len(selected_agents) < 2:
             st.error("Please select at least 2 agents to continue")
             return
-
+    
+        # Topic selector
+        topic = st.selectbox("Select a conversation topic:", conversation_starters)
+        
+          # Get number of iterations from user
+        num_iterations = st.number_input("Number of conversation rounds:", min_value=1, max_value=10, value=1)
+        
         # Filter agents based on selection while maintaining order
         ordered_agents = []
         for name in selected_agents:
@@ -349,7 +367,7 @@ def main():
         # Update sidebar with selected agents status
         st.sidebar.markdown("### Selected Agents Status")
         for agent in agents:  # Using ordered agents list
-            avatar = Agent.agent_avatars.get(agent.kind, "🧑")
+            avatar = Agent.agent_avatars.get(agent.kind, Agent.DEFAULT_AVATAR)
             st.sidebar.markdown(f"{avatar} 🟢 {agent.name} ready")
         st.sidebar.markdown("---")
         
@@ -363,9 +381,7 @@ def main():
          
             # Iterate the specified number of times
             for _ in range(num_iterations):
-                
                 for agent in agents:
-                    # st.session_state.conversation.append((agent.name, "Thinking..."))
                     with st.spinner(f"Waiting for {agent.name}'s response..."):
                         response = agent.respond(topic)
                         st.session_state.conversation.append((agent.name, response))
@@ -376,10 +392,10 @@ def main():
                             st.markdown(f">{msg}", unsafe_allow_html=True)
                             st.markdown("---")
            
-            # Create vehicle agent for analysis
+            # Create vehicle agent for analysis first
             vehicle_agent = VehicleAgent()
             
-            # Analyze conversation and search Carmax if vehicles mentioned
+            # Then analyze conversation and search Carmax if vehicles mentioned
             vehicle_mentions = vehicle_agent.analyze_conversation(st.session_state.conversation)
             if vehicle_mentions:
                 with st.spinner("Searching CarMax..."):
