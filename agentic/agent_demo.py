@@ -134,6 +134,14 @@ class VehicleAgent:
 
 class Agent:
     """Agents class defining agent name and personality."""
+    
+    # Class-level avatar mapping
+    agent_avatars = {
+        "architect": "👨‍🏫",
+        "carmax": "🚗",
+        "engineer": "🤖"
+    }
+    
     def __init__(self, name, personality, kind):
         self.name = name
         self.personality = personality
@@ -216,31 +224,29 @@ def init_streamlit():
         # Update styling to include footer
         st.markdown("""
             <style>
-            /* Carmax.com colors */
-            :root {
-                --primary-color: #004c97;      /* Carmax primary blue */
-                --secondary-color: #0072ce;    /* Carmax secondary blue */
-                --accent-color: #00a3e0;       /* Carmax accent blue */
-                --background-color: #ffffff;    /* White background */
-                --text-color: #333333;         /* Dark gray text */
-                --link-color: #0072ce;         /* Link color */
-            }
-            /* Apply colors */
-            .stApp {
+            :root {{ 
+                --primary-color: #004c97;
+                --secondary-color: #0072ce;
+                --accent-color: #00a3e0;
+                --background-color: #ffffff;
+                --text-color: #333333;
+                --link-color: #0072ce;
+            }}
+            .stApp {{
                 background-color: var(--background-color);
                 color: var(--text-color);
-            }
-            .stButton>button {
+            }}
+            .stButton>button {{
                 background-color: var(--primary-color);
                 color: white;
-            }
-            .stButton>button:hover {
+            }}
+            .stButton>button:hover {{
                 background-color: var(--secondary-color);
-            }
-            a {
+            }}
+            a {{
                 color: var(--link-color);
-            }
-            footer {
+            }}
+            footer {{
                 position: fixed;
                 bottom: 0;
                 width: 100%;
@@ -250,12 +256,9 @@ def init_streamlit():
                 text-align: center;
                 font-size: 0.8em;
                 color: var(--text-color);
-            }
+            }}
             </style>
-            
-            <footer>
-                Version {version} | Created by {author} | © 2024
-            </footer>
+            <footer>Version {version} | Created by {author} | © 2024</footer>
         """.format(version=__version__, author=__author__), unsafe_allow_html=True)
         
     except Exception as e:
@@ -294,15 +297,7 @@ def setup_agents(agents):
     for agent in agents:
         with st.sidebar.expander(f"**{agent.name}**", expanded=False):
             st.write(agent.personality)
-        # Create agent-specific avatars/emojis
-        agent_avatars = {
-            "architect": "👨‍🏫",
-            "carmax": "🚗",
-            "engineer": "🤖"
-        }
-        avatar = agent_avatars.get(agent.kind, "🧑")  # Default avatar if name not found
-    #     st.sidebar.markdown(f"{avatar} 🟢 Online")
-    # st.sidebar.markdown("---")
+        avatar = Agent.agent_avatars.get(agent.kind, "🧑")  # Default avatar if name not found
 
 def main():
     # Check if the Ollama service is running
@@ -344,19 +339,17 @@ def main():
             st.error("Please select at least 2 agents to continue")
             return
 
-        # Filter agents based on selection
-        agents = [agent for agent in agents if agent.name in selected_agents]
+        # Filter agents based on selection while maintaining order
+        ordered_agents = []
+        for name in selected_agents:
+            agent = next(a for a in agents if a.name == name)
+            ordered_agents.append(agent)
+        agents = ordered_agents
         
         # Update sidebar with selected agents status
         st.sidebar.markdown("### Selected Agents Status")
-        for agent in agents:
-            # Get avatar based on agent kind
-            agent_avatars = {
-                "architect": "👨‍🏫",
-                "carmax": "🚗", 
-                "engineer": "🤖"
-            }
-            avatar = agent_avatars.get(agent.kind, "🧑")  # Default if kind not found
+        for agent in agents:  # Using ordered agents list
+            avatar = Agent.agent_avatars.get(agent.kind, "🧑")
             st.sidebar.markdown(f"{avatar} 🟢 {agent.name} ready")
         st.sidebar.markdown("---")
         
