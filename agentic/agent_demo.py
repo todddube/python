@@ -8,6 +8,10 @@ import streamlit as st
 import requests
 import pyhocon
 
+# Add version constants at top of file
+__version__ = "0.1"
+__author__ = "Todd Dube"
+
 class CarmaxSearchAgent:
     def __init__(self, max_price=None, min_price=None):
         self.base_url = "https://www.carmax.com/cars"
@@ -25,7 +29,7 @@ class CarmaxSearchAgent:
                 url += f"&price-min={self.min_price}"
                 
             webbrowser.open(url)
-            return f"Opening Carmax search for: {query}"
+            return f"➡️🎯Opening Carmax search for: {query}"
             
         except Exception as e:
             return f"Error searching Carmax: {str(e)}"
@@ -87,6 +91,10 @@ class VehicleAgent:
     """Agent for handling vehicle-related tasks."""
     def __init__(self, max_price=None, min_price=None):
         self.carmax = CarmaxSearchAgent(max_price, min_price)
+        # Add vehicle agent status to sidebar
+        with st.sidebar.expander("🚗 Vehicle Agent", expanded=True):
+            st.write("Searches CarMax inventory and extracts vehicle mentions")
+        st.sidebar.markdown("🔎  Online")
         
     def extract_mentions(self, text):
         """Extract vehicle brands and models from text."""
@@ -205,7 +213,7 @@ def init_streamlit():
                     * Configurable conversation topics
                     """)
         
-        # Keep existing styling
+        # Update styling to include footer
         st.markdown("""
             <style>
             /* Carmax.com colors */
@@ -232,8 +240,23 @@ def init_streamlit():
             a {
                 color: var(--link-color);
             }
+            footer {
+                position: fixed;
+                bottom: 0;
+                width: 100%;
+                padding: 10px;
+                background-color: var(--background-color);
+                border-top: 1px solid #ddd;
+                text-align: center;
+                font-size: 0.8em;
+                color: var(--text-color);
+            }
             </style>
-        """, unsafe_allow_html=True)
+            
+            <footer>
+                Version {version} | Created by {author} | © 2024
+            </footer>
+        """.format(version=__version__, author=__author__), unsafe_allow_html=True)
         
     except Exception as e:
         st.warning("⚠️ Error initializing Streamlit configuration")
@@ -278,8 +301,8 @@ def setup_agents(agents):
             "engineer": "🤖"
         }
         avatar = agent_avatars.get(agent.kind, "🧑")  # Default avatar if name not found
-        st.sidebar.markdown(f"{avatar} 🟢 Online")
-    st.sidebar.markdown("---")
+    #     st.sidebar.markdown(f"{avatar} 🟢 Online")
+    # st.sidebar.markdown("---")
 
 def main():
     # Check if the Ollama service is running
@@ -323,6 +346,19 @@ def main():
 
         # Filter agents based on selection
         agents = [agent for agent in agents if agent.name in selected_agents]
+        
+        # Update sidebar with selected agents status
+        st.sidebar.markdown("### Selected Agents Status")
+        for agent in agents:
+            # Get avatar based on agent kind
+            agent_avatars = {
+                "architect": "👨‍🏫",
+                "carmax": "🚗", 
+                "engineer": "🤖"
+            }
+            avatar = agent_avatars.get(agent.kind, "🧑")  # Default if kind not found
+            st.sidebar.markdown(f"{avatar} 🟢 {agent.name} ready")
+        st.sidebar.markdown("---")
         
         if st.button("Start Conversation"):
             st.session_state.conversation = []  # Clear previous conversation
