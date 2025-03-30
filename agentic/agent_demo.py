@@ -1,6 +1,7 @@
 from time import sleep
 from time import time
 import webbrowser
+import threading
 import os
 import subprocess
 import streamlit as st
@@ -55,9 +56,10 @@ def get_ollama_response(prompt, model="llama3"):
 
 class Agent:
     """Agents class defining agent name and personality."""
-    def __init__(self, name, personality):
+    def __init__(self, name, personality, kind):
         self.name = name
         self.personality = personality
+        self.kind = kind
         self.conversation_history = []        
 
     def __getattr__(self, name):
@@ -92,7 +94,8 @@ class Agent:
                 agent_config = config['agents'][agent_key]
                 agent = Agent(
                     name=agent_config['name'],
-                    personality=agent_config['personality']
+                    personality=agent_config['personality'],
+                    kind=agent_config['kind']
                 )
                 agents.append(agent)
 
@@ -112,7 +115,9 @@ def init_streamlit():
         layout="centered",
         initial_sidebar_state="expanded",
     )
-
+def ollama_check():
+    """Check if the Ollama service is running."""
+    
     # Add status check for Ollama service
     try:
         response = requests.get('http://localhost:11434/api/version')
@@ -121,6 +126,7 @@ def init_streamlit():
         else:
             st.sidebar.error("🔴 Ollama service is not responding properly")
             st.error("Ollama service is not responding properly. Please check if it's running correctly.")
+            
     except requests.exceptions.RequestException:
         st.sidebar.error("🔴 Ollama service is not running")
 
@@ -137,7 +143,12 @@ def init_streamlit():
         
 
 def main():
+    # Initialize Streamlit app
+    # Check if the Ollama service is running
     init_streamlit()
+    ollama_check()
+    
+    st.title("Agentic Conversation Simulator")
         
     # Initialize session state
     if 'conversation' not in st.session_state:
@@ -151,6 +162,14 @@ def main():
         st.sidebar.markdown("### Agents & Personality")
         for agent in agents:
             st.sidebar.markdown(f"**{agent.name}**: {agent.personality}")
+            # Create agent-specific avatars/emojis
+            agent_avatars = {
+                "architect": "👨‍🏫",
+                "carmax": "🚗",
+                "engineer": "🤖"
+            }
+            avatar = agent_avatars.get(agent.kind, "🧑")  # Default avatar if name not found
+            st.sidebar.markdown(f"{avatar} Online")
         st.sidebar.markdown("---")
         
         # Display current conversation starters in sidebar
@@ -181,13 +200,50 @@ def main():
                         st.markdown(f"**{speaker}**:")
                         st.markdown(f">{msg}", unsafe_allow_html=True)
                         st.markdown("---")
-            
+                        
+            # Create CarmaxSearchAgent instance and perform search at end of conversation
+            carmax_agent = CarmaxSearchAgent()
+            search_result = carmax_agent.search_vehicles("Jeep Wrangler")
+
+            # Display search result
+            st.markdown("### Carmax Search Results")
+            st.write(search_result)
             
     except Exception as e:
         st.error(f"Error Main Thread: {str(e)}")
+
+class CarmaxSearchAgent:
+    def __init__(self, max_price=None, min_price=None):
+        self.base_url = "https://www.carmax.com/cars"
+        self.max_price = max_price
+        self.min_price = min_price
+
+    def search_vehicles(self, query):
+        """Search Carmax for vehicles matching query"""
+        try:
+            url = f"{self.base_url}/search?query={query}"
+            if self.max_price:
+                url += f"&price-max={self.max_price}"
+            if self.min_price:
+                url += f"&price-min={self.min_price}"
+                
+            webbrowser.open(url)
+            return f"Opening Carmax search for: {query}"
             
+        except Exception as e:
+            return f"Error searching Carmax: {str(e)}"
+
+    def get_recommendations(self, preferences):
+        """Get vehicle recommendations based on preferences"""
+        prompt = f"""
+        Based on these preferences: {preferences}
+        Suggest 3 specific vehicle models available at Carmax.
+        Include year ranges and price estimates.
+        """
+        return get_ollama_response(prompt)
+        
 if __name__ == "__main__":
-    import threading
+
     threading.Timer(2.0, open_chromium).start()  # Delay to allow Streamlit to start
     
     main()
