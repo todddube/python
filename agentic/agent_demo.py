@@ -153,17 +153,11 @@ class Agent:
     # Default avatar for unknown agent types
     DEFAULT_AVATAR = "👤"
     
-    # Class-level avatar mapping
-    agent_avatars = {
-        "architect": "👨‍🏫",
-        "carmax": "🚗",
-        "engineer": "🤖"
-    }
-    
-    def __init__(self, name, personality, kind):
+    def __init__(self, name, personality, kind, avatar=None):
         self.name = name
         self.personality = personality
         self.kind = kind
+        self.avatar = avatar or self.DEFAULT_AVATAR
         self.conversation_history = []        
 
     def __getattr__(self, name):
@@ -199,7 +193,9 @@ class Agent:
                 agent = Agent(
                     name=agent_config['name'],
                     personality=agent_config['personality'],
-                    kind=agent_config['kind']
+                    kind=agent_config['kind'],
+                    # Use get() with None as default for optional avatar
+                    avatar=agent_config.get('avatar', None)
                 )
                 agents.append(agent)
 
@@ -210,6 +206,14 @@ class Agent:
         except Exception as e:
             raise Exception(f"Error loading configuration: {e}")
         
+def setup_agents(agents):
+    # Display agents status in sidebar
+    with st.sidebar.expander("👥 Agents & Personalities", expanded=False):
+        for agent in agents:
+            st.markdown(f"**{agent.avatar} {agent.name}**")
+            st.write(agent.personality)
+            st.markdown("---")
+
 def init_streamlit():
     """Initialize Streamlit configuration and check services."""
     try:
@@ -309,14 +313,6 @@ def ollama_check():
     except requests.exceptions.RequestException:
         st.sidebar.warning("⚠️ Cannot fetch available models")
 
-def setup_agents(agents):
-    # Display agents status in sidebar
-    st.sidebar.markdown("### Agents & Personality")
-    for agent in agents:
-        with st.sidebar.expander(f"**{agent.name}**", expanded=False):
-            st.write(agent.personality)
-        avatar = Agent.agent_avatars.get(agent.kind, Agent.DEFAULT_AVATAR)
-
 def main():
     # Check if the Ollama service is running
     ollama_check()
@@ -367,8 +363,7 @@ def main():
         # Update sidebar with selected agents status
         st.sidebar.markdown("### Selected Agents Status")
         for agent in agents:  # Using ordered agents list
-            avatar = Agent.agent_avatars.get(agent.kind, Agent.DEFAULT_AVATAR)
-            st.sidebar.markdown(f"{avatar} 🟢 {agent.name} ready")
+            st.sidebar.markdown(f"{agent.avatar} 🟢 {agent.name} ready")
         st.sidebar.markdown("---")
         
         if st.button("Start Conversation"):
