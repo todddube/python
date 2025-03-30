@@ -40,9 +40,8 @@ def get_ollama_response(prompt, model="llama3"):
         
         # Update sidebar with query info
         with st.sidebar.expander("🔄 Recent Activity", expanded=True):
-            st.write(f"Query sent: {prompt[:100]}...")
+            st.write(f"Query sent: {prompt[:50]}...")
             st.write(f"Response time: {time() - start_time:.2f} seconds")
-            #st.write(f"Epochs: {time():.0f}")
             
         if 'response' in json_response:
             return json_response['response']
@@ -112,7 +111,7 @@ def init_streamlit():
     st.set_page_config(
         page_title="Agentic Conversation Simulator",
         page_icon="🤖",
-        layout="centered",
+        layout="wide",
         initial_sidebar_state="expanded",
     )
 def ollama_check():
@@ -161,7 +160,8 @@ def main():
         # Display agents status in sidebar
         st.sidebar.markdown("### Agents & Personality")
         for agent in agents:
-            st.sidebar.markdown(f"**{agent.name}**: {agent.personality}")
+            with st.sidebar.expander(f"**{agent.name}**", expanded=False):
+                st.write(agent.personality)
             # Create agent-specific avatars/emojis
             agent_avatars = {
                 "architect": "👨‍🏫",
@@ -169,7 +169,7 @@ def main():
                 "engineer": "🤖"
             }
             avatar = agent_avatars.get(agent.kind, "🧑")  # Default avatar if name not found
-            st.sidebar.markdown(f"{avatar} Online")
+            st.sidebar.markdown(f"{avatar} 🟢 Online")
         st.sidebar.markdown("---")
         
         # Display current conversation starters in sidebar
@@ -200,15 +200,24 @@ def main():
                         st.markdown(f"**{speaker}**:")
                         st.markdown(f">{msg}", unsafe_allow_html=True)
                         st.markdown("---")
-                        
-            # Create CarmaxSearchAgent instance and perform search at end of conversation
-            carmax_agent = CarmaxSearchAgent()
-            search_result = carmax_agent.search_vehicles("Jeep Wrangler")
+           
+            # Analyze conversation for vehicle mentions
+            vehicle_mentions = []
+            for _, msg in st.session_state.conversation:
+                # Common car brands and models (expand this list as needed)
+                car_brands = ["jeep", "toyota", "honda", "ford", "chevrolet", "bmw", "mercedes", "audi"]
+                msg_lower = msg.lower()
+                for brand in car_brands:
+                    if brand in msg_lower:
+                        vehicle_mentions.append(brand)
 
-            # Display search result
-            st.markdown("### Carmax Search Results")
-            st.write(search_result)
-            
+            # Only perform Carmax search if vehicles were mentioned
+            if vehicle_mentions:
+                carmax_agent = CarmaxSearchAgent()
+                search_result = carmax_agent.search_vehicles(" ".join(vehicle_mentions))
+                st.markdown("### Carmax Search Results")
+                st.write(search_result)
+                
     except Exception as e:
         st.error(f"Error Main Thread: {str(e)}")
 
@@ -220,8 +229,9 @@ class CarmaxSearchAgent:
 
     def search_vehicles(self, query):
         """Search Carmax for vehicles matching query"""
+        ## https://www.carmax.com/cars?search=jeep+wranglers&showreservedcars=false
         try:
-            url = f"{self.base_url}/search?query={query}"
+            url = f"{self.base_url}?search={query}&showreservedcars=false"
             if self.max_price:
                 url += f"&price-max={self.max_price}"
             if self.min_price:
