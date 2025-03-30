@@ -229,7 +229,7 @@ class CarmaxSearchAgent:
 
     def search_vehicles(self, query):
         """Search Carmax for vehicles matching query"""
-        ## https://www.carmax.com/cars?search=jeep+wranglers&showreservedcars=false
+        # updated to use carmax search URL
         try:
             url = f"{self.base_url}?search={query}&showreservedcars=false"
             if self.max_price:
