@@ -274,7 +274,22 @@ def ollama_check():
         st.sidebar.warning("⚠️ Cannot fetch available models")
 
 def main():
-    # Check if the Ollama service is running
+    # Add goodbye button in a container at the top right
+    with st.container():
+        col1, col2 = st.columns([6,1])
+        with col2:
+            if st.button("👋 Exit", type="primary"):
+                st.markdown("""
+                    <div style="text-align: center; margin-top: 50px;">
+                        <h1>👋 Goodbye!</h1>
+                        <p style="font-size: 24px;">Thanks for using the Agentic Conversation Simulator</p>
+                        <p style="font-size: 20px;">Feel free to close this window</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                st.balloons()  # Add a fun effect
+                st.stop()  # Stop execution here
+    
+    # Continue with existing main function
     ollama_check()
     
     # Get agents and topics
@@ -348,7 +363,7 @@ def main():
                 for agent in agents:
                     with st.spinner(f"Waiting for {agent.name}'s response..."):
                         response = agent.respond(topic)
-                        st.session_state.conversation.append((agent.name, response))
+                        st.session_state.conversation.append((f"{agent.avatar} {agent.name}", response))
                     # Update display
                     with conversation_placeholder.container():
                         for speaker, msg in st.session_state.conversation:
