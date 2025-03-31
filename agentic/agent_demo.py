@@ -106,7 +106,7 @@ class VehicleAgent:
             font-weight: bold;
             }
             </style>
-            <h3><span class="animated-text">🚗 Vehicle Agent Online</span></h3>
+            <h3><span class="animated-text">🚗 Vehicle Agent....</span></h3>
         """, unsafe_allow_html=True)
         # st.write("Searches CarMax inventory and extracts vehicle mentions")
         #st.sidebar.markdown("🔎  Online")
@@ -307,8 +307,15 @@ def main():
             st.error("Please select at least 2 agents to continue")
             return
     
-        # Topic selector
-        topic = st.selectbox("Select a conversation topic:", conversation_starters)
+        # Topic selector with option for custom input
+        topic_source = st.radio("Choose topic source:", ["Predefined Topics", "Custom Topic"])
+        if topic_source == "Predefined Topics":
+            topic = st.selectbox("Select a conversation topic:", conversation_starters)
+        else:
+            topic = st.text_input("Enter a custom conversation topic:", "")
+            if not topic:
+                st.error("Please enter a topic to continue")
+                return
         
           # Get number of iterations from user
         num_iterations = st.number_input("Number of conversation rounds:", min_value=1, max_value=10, value=1)
@@ -327,15 +334,14 @@ def main():
         st.sidebar.markdown("---")
         
         if st.button("Start Conversation"):
+            # Create vehicle agent first, before starting conversation
+            vehicle_agent = VehicleAgent()
+            
             st.session_state.conversation = []  # Clear previous conversation
-            # Display the topic
             st.subheader(f"Topic: {topic}")
             
             # Create placeholder for conversation
             conversation_placeholder = st.empty()
-            
-            # Create vehicle agent first, before the conversation starts
-            vehicle_agent = VehicleAgent()
          
             # Iterate the specified number of times
             for _ in range(num_iterations):
@@ -350,7 +356,7 @@ def main():
                             st.markdown(f">{msg}", unsafe_allow_html=True)
                             st.markdown("---")
                             
-            # Now analyze conversation since vehicle_agent exists
+            # Now analyze conversation using the existing vehicle_agent
             vehicle_mentions = vehicle_agent.analyze_conversation(st.session_state.conversation)
             if vehicle_mentions:
                 with st.spinner("Searching CarMax..."):
