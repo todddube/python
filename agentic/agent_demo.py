@@ -242,47 +242,7 @@ def init_streamlit():
                     * CarMax integration for vehicle searches
                     * Configurable conversation topics
                     """)
-        
-        # Update styling to include footer
-        st.markdown("""
-            <style>
-            :root {{ 
-                --primary-color: #004c97;
-                --secondary-color: #0072ce;
-                --accent-color: #00a3e0;
-                --background-color: #ffffff;
-                --text-color: #333333;
-                --link-color: #0072ce;
-            }}
-            .stApp {{
-                background-color: var(--background-color);
-                color: var(--text-color);
-            }}
-            .stButton>button {{
-                background-color: var(--primary-color);
-                color: white;
-            }}
-            .stButton>button:hover {{
-                background-color: var(--secondary-color);
-            }}
-            a {{
-                color: var(--link-color);
-            }}
-            footer {{
-                position: fixed;
-                bottom: 0;
-                width: 100%;
-                padding: 10px;
-                background-color: var(--background-color);
-                border-top: 1px solid #ddd;
-                text-align: center;
-                font-size: 0.8em;
-                color: var(--text-color);
-            }}
-            </style>
-            <footer>Version {version} | Created by {author} | © 2024</footer>
-        """.format(version=__version__, author=__author__), unsafe_allow_html=True)
-        
+       
     except Exception as e:
         st.warning("⚠️ Error initializing Streamlit configuration")
         print(f"Error in init_streamlit: {e}")
@@ -389,7 +349,7 @@ def main():
                             st.markdown(f"**{speaker}**:")
                             st.markdown(f">{msg}", unsafe_allow_html=True)
                             st.markdown("---")
-           
+                            
             # Now analyze conversation since vehicle_agent exists
             vehicle_mentions = vehicle_agent.analyze_conversation(st.session_state.conversation)
             if vehicle_mentions:
