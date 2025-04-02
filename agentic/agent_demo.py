@@ -42,7 +42,8 @@ class CarmaxSearchAgent:
         Include year ranges and price estimates.
         """
         return get_ollama_response(prompt)
-    
+
+
 def open_chromium():
     """Open Chromium browser and navigate to Streamlit app."""
     chromium_path = r"C:\Program Files\Chromium\chrome.exe"  # Adjust path as needed
@@ -254,7 +255,22 @@ def ollama_check():
     try:
         response = requests.get('http://localhost:11434/api/version')
         if response.status_code == 200:
-            st.sidebar.success("🟢 Ollama service is running")
+            st.sidebar.markdown("""
+                <style>
+                @keyframes flashingColors {
+                    0% { color: #FF0000; }
+                    25% { color: #00FF00; }
+                    50% { color: #0000FF; }
+                    75% { color: #FFFF00; }
+                    100% { color: #FF0000; }
+                }
+                .flashing-text {
+                    animation: flashingColors 2s infinite;
+                    font-weight: bold;
+                }
+                </style>
+                <span class="flashing-text">🟢 Ollama service is running</span>
+            """, unsafe_allow_html=True)
         else:
             st.sidebar.error("🔴 Ollama service is not responding properly")
             st.error("Ollama service is not responding properly. Please check if it's running correctly.")
@@ -273,22 +289,9 @@ def ollama_check():
     except requests.exceptions.RequestException:
         st.sidebar.warning("⚠️ Cannot fetch available models")
 
+
 def main():
-    # Add goodbye button in a container at the top right
-    with st.container():
-        col1, col2 = st.columns([6,1])
-        with col2:
-            if st.button("👋 Exit", type="primary"):
-                st.markdown("""
-                    <div style="text-align: center; margin-top: 50px;">
-                        <h1>👋 Goodbye!</h1>
-                        <p style="font-size: 24px;">Thanks for using the Agentic Conversation Simulator</p>
-                        <p style="font-size: 20px;">Feel free to close this window</p>
-                    </div>
-                """, unsafe_allow_html=True)
-                st.balloons()  # Add a fun effect
-                st.stop()  # Stop execution here
-    
+    """Main function to run the Streamlit app."""
     # Continue with existing main function
     ollama_check()
     
@@ -301,7 +304,17 @@ def main():
         return
     
     st.title("Agentic Conversation Simulator")
-        
+    # Add goodbye button in a container at the top right
+    if st.button("👋 Exit", type="primary"):
+        st.markdown("""
+            <div style="text-align: center; margin-top: 50px;">
+                <h1>👋 Goodbye!</h1>
+                <p style="font-size: 24px;">Thanks for using the Agentic Conversation Simulator</p>
+                <p style="font-size: 20px;">Feel free to close this window</p>
+            </div>
+        """, unsafe_allow_html=True)
+        st.balloons()  # Add a fun effect
+        st.stop()  # Stop execution here
     # Initialize session state
     if 'conversation' not in st.session_state:
         st.session_state.conversation = []
