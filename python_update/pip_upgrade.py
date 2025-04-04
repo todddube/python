@@ -2,7 +2,7 @@ import datetime
 import subprocess
 import os
 import sys
-from datetime import datetime  # Correct import
+from datetime import datetime, timedelta  # Added timedelta to import
 
 def list_installed_packages():
     result = subprocess.run([sys.executable, '-m', 'pip', 'list', '--outdated', '--format=columns'], stdout=subprocess.PIPE)
@@ -16,6 +16,22 @@ def upgrade_package(package_name):
             log_file.write(f"Failed to upgrade {package_name}: {e}\n")
         print(f"* Failed to upgrade {package_name}. Check upgrade_errors.log for details.")
 
+def cleanup_old_files():
+    """clean up old requirements files older than 14 days"""
+    current_path = os.path.dirname(os.path.abspath(__file__))
+    cutoff_date = datetime.now() - timedelta(days=14)  # Removed datetime. prefix
+    
+    for file in os.listdir(current_path):
+        if file.startswith('requirements_'):
+            file_path = os.path.join(current_path, file)
+            file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+            if file_time < cutoff_date:
+                try:
+                    os.remove(file_path)
+                    print(f"Removed old file: {file}")
+                except OSError as e:
+                    print(f"Error removing {file}: {e}")
+
 def main():
     
     print(r"""
@@ -24,13 +40,24 @@ def main():
     Purpose:    Upgrade all outdated pip packages and 
                 makes dates requirements backup dated. 
     Written by: Todd Dube
-    Date:       2025-03-15                                                                                                 
-    Version:    1.0.2
+    Date:       2025-04-04                                                                                                
+    Version:    1.1 - Added error handling for package upgrades and logging
+                1.0 - Initial version
+    Notes:      This script will list all outdated packages,
+                upgrade them, and create a backup of the current requirements.
+                It will also clean up old requirements files older than 14 days.
+                Make sure to run this script in a virtual environment or
+                a controlled environment to avoid unintended upgrades.
+    Usage:      python pip_upgrade.py
+    Dependencies: pip, subprocess, os, sys, datetime
     ========================================================================
     """)
     # getting current path 
     current_path = os.path.dirname(os.path.abspath(__file__))
     # print(f"Current script path: {current_path}")
+    
+    print("Cleaning up old requirements files...")
+    cleanup_old_files()
     
     # List outdated packages
     print("Listing outdated packages...")
