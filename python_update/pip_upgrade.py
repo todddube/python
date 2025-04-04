@@ -17,9 +17,9 @@ def upgrade_package(package_name):
         print(f"* Failed to upgrade {package_name}. Check upgrade_errors.log for details.")
 
 def cleanup_old_files():
-    """clean up old requirements files older than 14 days"""
+    """clean up old requirements files older than X days"""
     current_path = os.path.dirname(os.path.abspath(__file__))
-    cutoff_date = datetime.now() - timedelta(days=14)  # Removed datetime. prefix
+    cutoff_date = datetime.now() - timedelta(days=7)  # Removed datetime. prefix
     
     for file in os.listdir(current_path):
         if file.startswith('requirements_'):
@@ -71,7 +71,8 @@ def main():
         file.write(outdated_packages)
 
     # Write requirements to a file
-    requirements_file = current_path + f'/requirements_{today}_{datetime.now().strftime("%H-%M-%S")}.txt'
+    requirements_file = current_path + f'/output/requirements_{today}_{datetime.now().strftime("%H-%M-%S")}.txt'
+
     with open(requirements_file, 'w') as file:
         subprocess.run([sys.executable, '-m', 'pip', 'freeze'], stdout=file)
     print(f"Requirements have been frozen to {requirements_file}")
