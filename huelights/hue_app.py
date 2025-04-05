@@ -4,9 +4,14 @@ import time
 import logging
 import base64
 import json
+import urllib3
 from typing import Optional, Dict, Any, Tuple, List
 from pathlib import Path
 from datetime import datetime
+
+# Suppress InsecureRequestWarning
+# TODO: Implement proper certificate verification
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -120,8 +125,27 @@ class HueApp:
     def __init__(self):
         self.credentials = HueCredentials()
         self.controller = None
+        # Initialize session state variables
         if 'last_update' not in st.session_state:
-            st.session_state.last_update = time.time()
+            st.session_state.last_update = 0
+        if 'poll_interval' not in st.session_state:
+            st.session_state.poll_interval = 1  # 1 second default
+
+    def should_update(self) -> bool:
+        """Check if it's time to update based on polling interval"""
+        current_time = time.time()
+        if current_time - st.session_state.last_update >= st.session_state.poll_interval:
+            st.session_state.last_update = current_time
+            return True
+        return False
+
+    def render_status_bar(self):
+        """Render the status bar with update information"""
+        status_col1, status_col2 = st.columns([3, 1])
+        with status_col1:
+            st.caption("🔄 Auto-updating status")
+        with status_col2:
+            st.caption(f"Last update: {datetime.now().strftime('%H:%M:%S')}")
 
     def show_credentials_form(self) -> Tuple[Optional[str], Optional[str]]:
         """Display and handle the credentials input form."""
@@ -151,27 +175,19 @@ class HueApp:
             if not bridge_ip or not bridge_username:
                 return
         
-        # Initialize Hue connection
         try:
-            self.controller = HueController(bridge_ip, bridge_username)
+            # Initialize controller if not already initialized
+            if not self.controller:
+                self.controller = HueController(bridge_ip, bridge_username)
             
-            # Add polling logic
-            current_time = time.time()
-            if current_time - st.session_state.last_update >= 1:  # Poll every second
-                st.session_state.last_update = current_time
+            # Check if we should update based on polling interval
+            if self.should_update():
+                logger.debug(f"Polling update at {datetime.now().strftime('%H:%M:%S')}")
                 st.rerun()
-                
-            # Get all lights and groups with status indicator
-            status_col1, status_col2 = st.columns([3, 1])
-            with status_col1:
-                st.caption("🔄 Auto-updating status")
-            with status_col2:
-                st.caption(f"Last update: {datetime.now().strftime('%H:%M:%S')}")
             
-            # Get all lights
+            # Render status bar and get devices
+            self.render_status_bar()
             lights = self.controller.get_lights()
-            
-            # Get all groups
             groups = self.controller.get_groups()
             
             # Display groups section
@@ -181,7 +197,28 @@ class HueApp:
                 col1, col2, col3 = st.columns([2.5, 0.5, 1])
                 
                 with col1:
-                    st.write(f"**{group.name}** (ID: {group.id_})")
+                    # Define emoji mappings
+                    room_emojis = {
+                        'living': '🛋️',
+                        'bedroom': '🛏️',
+                        'kitchen': '🍳',
+                        'bathroom': '🚿',
+                        'dining': '🍽️',
+                        'office': '💼',
+                        'garage': '🚗',
+                        'garden': '🌺',
+                        'outdoor': '🌳'
+                    }
+                    
+                    # Find matching emoji or default to house
+                    emoji = '🏠'
+                    name_lower = group.name.lower()
+                    for key, value in room_emojis.items():
+                        if key in name_lower:
+                            emoji = value
+                            break
+                            
+                    st.write(f"{emoji} **{group.name}** (ID: {group.id_})")
                     
                 with col2:
                     st.write("Status: 🟢" if self.controller.get_group_state(group) else "Status: ⚫")
