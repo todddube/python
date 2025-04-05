@@ -85,7 +85,10 @@ def get_group_state(group) -> bool:
 def control_group(group, new_state: bool) -> None:
     """Control group state with error handling."""
     try:
-        group.set_state({"on": new_state})
+        if new_state:
+            group.on()
+        else:
+            group.off()
         time.sleep(0.5)  # Brief delay for API
         logger.info(f"Set group {group.name} to state: {new_state}")
     except Exception as e:
@@ -123,32 +126,13 @@ def main():
         # Get all lights
         lights = hue.get_lights()
         
-        # Display lights section
-        st.header("💡 Lights")
-        for light in lights:
-            col1, col2 = st.columns([3, 1])
-            
-            with col1:
-                st.write(f"**{light.name}** (ID: {light.id_})")
-                
-            with col2:
-                current_state = get_light_state(light)
-                if st.button(
-                    "Turn Off" if current_state else "Turn On",
-                    key=f"light_{light.id_}"
-                ):
-                    try:
-                        control_light(light, not current_state)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error controlling light: {str(e)}")
-        
         # Get all groups
         groups = hue.get_groups()
         
         # Display groups section
         st.header("🏠 Groups/Rooms")
         for group in groups:
+            # Create columns for group name and control button
             col1, col2 = st.columns([3, 1])
             
             with col1:
@@ -165,6 +149,32 @@ def main():
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error controlling group: {str(e)}")
+            
+            # Add expandable section for lights in this group
+            with st.expander("Show Lights in this Group"):
+                if hasattr(group, 'lights') and group.lights:
+                    for light_id in group.lights:
+                        # Find the light object that matches this ID
+                        light = next((l for l in lights if str(l.id_) == str(light_id)), None)
+                        if light:
+                            lcol1, lcol2 = st.columns([3, 1])
+                            with lcol1:
+                                st.write(f"  • {light.name}")
+                            with lcol2:
+                                current_light_state = get_light_state(light)
+                                if st.button(
+                                    "Turn Off" if current_light_state else "Turn On",
+                                    key=f"light_{light.id_}_in_group_{group.id_}"
+                                ):
+                                    try:
+                                        control_light(light, not current_light_state)
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error controlling light: {str(e)}")
+                else:
+                    st.info("No lights in this group")
+            
+            st.divider()  # Add visual separation between groups
                         
     except Exception as e:
         st.error(f"Error connecting to Hue bridge: {str(e)}")
