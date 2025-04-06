@@ -13,9 +13,23 @@ from datetime import datetime
 # TODO: Implement proper certificate verification
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Create logs directory if it doesn't exist
+log_dir = Path('logs')
+log_dir.mkdir(exist_ok=True)
+
+# Configure logging with both file and console handlers
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_dir / 'hue_app.log'),
+        logging.StreamHandler()
+    ]
+)
+
+# Get logger for this module
 logger = logging.getLogger(__name__)
+logger.info("Hue App started " + datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
 
 class HueCredentials:
     def __init__(self, filepath: str = 'creds/hue_credentials.json'):
@@ -182,7 +196,7 @@ class HueApp:
             
             # Check if we should update based on polling interval
             if self.should_update():
-                logger.debug(f"Polling update at {datetime.now().strftime('%H:%M:%S')}")
+                logger.info(f"Polling update at {datetime.now().strftime('%H:%M:%S')}")
                 st.rerun()
             
             # Render status bar and get devices
