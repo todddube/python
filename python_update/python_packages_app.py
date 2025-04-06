@@ -33,14 +33,54 @@ def list_installed_packages_uv():
     except subprocess.CalledProcessError as e:
         return False, str(e)
 
-def upgrade_package_uv(package_name):
-    """Upgrade a package using UV"""
+def upgrade_package(package_name: str, package_manager: str = "pip") -> tuple[bool, str]:
+    """
+    Upgrade a package using the specified package manager
+    Args:
+        package_name: Name of the package to upgrade
+        package_manager: Either 'pip' or 'uv'
+    Returns:
+        Tuple of (success, message)
+    """
     try:
-        result = subprocess.run(['uv', 'pip', 'install', '--upgrade', package_name],
-                              capture_output=True, text=True, check=True)
+        if package_manager == "uv":
+            result = subprocess.run(['uv', 'pip', 'install', '--upgrade', package_name],
+                                 capture_output=True, text=True, check=True)
+        else:
+            result = subprocess.run([sys.executable, '-m', 'pip', 'install', '--upgrade', package_name],
+                                 capture_output=True, text=True, check=True)
         return True, result.stdout
     except subprocess.CalledProcessError as e:
         return False, str(e)
+
+def log_upgrade_output(package_name: str, success: bool, output: str, package_manager: str):
+    """Log upgrade output to a single combined log file"""
+    current_path = Path(os.path.dirname(os.path.abspath(__file__)))
+    output_dir = current_path / 'output'
+    output_dir.mkdir(exist_ok=True)
+    
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    
+    # Use a single log file for all output
+    log_file = output_dir / f'package_upgrades_{package_manager}_{timestamp}.log'
+    
+    # Format the log entry with clear separation and status indicators
+    log_entry = f"""
+        {'='*80}
+        📦 Package: {package_name}
+        ⏰ Timestamp: {timestamp}
+        ✔️ Status: {'SUCCESS' if success else '❌ FAILED'}
+        {'‾'*50}
+        Output:
+        {output}
+        {'_'*80}
+        """
+    
+    # Append the log entry to the file
+    with open(log_file, 'a', encoding='utf-8') as f:
+        f.write(log_entry)
+    
+    return str(log_file)
 
 # Initialize session state
 if 'last_action' not in st.session_state:
@@ -52,14 +92,6 @@ def list_installed_packages():
     result = subprocess.run([sys.executable, '-m', 'pip', 'list', '--outdated', '--format=columns'], 
                           stdout=subprocess.PIPE)
     return result.stdout.decode('utf-8')
-
-def upgrade_package(package_name):
-    try:
-        result = subprocess.run([sys.executable, '-m', 'pip', 'install', '--upgrade', package_name], 
-                              capture_output=True, text=True, check=True)
-        return True, result.stdout
-    except subprocess.CalledProcessError as e:
-        return False, e.stderr
 
 def create_requirements():
     """Create a full requirements.txt file based on selected package manager"""
@@ -104,8 +136,8 @@ def cleanup_old_files(days=7):
 def main():
     st.set_page_config(page_title="PIP Package Manager", page_icon="🐍", layout="wide")
     
-    st.title("🐍 PIP Package Manager")
-    st.write("Manage your Python packages with ease")
+    st.title("🐍 Python Package Manager")
+    st.write("Manage your Python packages with ease picking between pip and uv.")
 
     # Sidebar for actions
     with st.sidebar:
@@ -177,36 +209,61 @@ def main():
 
     elif st.session_state.last_action == "upgrade":
         st.header("⬆️ Package Upgrade")
-        if st.session_state.package_manager == "uv":
+        package_manager = st.session_state.package_manager
+        
+        # Get list of outdated packages
+        if package_manager == "uv":
             success, packages_output = list_installed_packages_uv()
             if not success:
                 st.error(f"Error listing packages: {packages_output}")
                 return
-            packages = packages_output
         else:
-            packages = list_installed_packages()
+            packages_output = list_installed_packages()
 
-        if not packages.strip():
+        if not packages_output.strip():
             st.success("No packages need upgrading!")
-        else:
-            outdated = [line.split()[0] for line in packages.splitlines()[2:]]
+            return
+
+        # Parse package list
+        outdated = [line.split()[0] for line in packages_output.splitlines()[2:]]
+        
+        # Allow package selection
+        selected_packages = st.multiselect(
+            "Select packages to upgrade",
+            options=outdated,
+            default=outdated,
+            help="Choose specific packages or leave all selected to upgrade everything"
+        )
+
+        if not selected_packages:
+            st.warning("Please select at least one package to upgrade")
+            return
+
+        if st.button(f"Upgrade {len(selected_packages)} Selected Packages"):
             progress_bar = st.progress(0)
             status_text = st.empty()
             
-            for i, package in enumerate(outdated):
+            for i, package in enumerate(selected_packages):
                 status_text.text(f"Upgrading {package}...")
-                if st.session_state.package_manager == "uv":
-                    success, output = upgrade_package_uv(package)
-                else:
-                    success, output = upgrade_package(package)
+                success, output = upgrade_package(package, package_manager)
+                
+                # Log output and errors
+                log_file = log_upgrade_output(package, success, output, package_manager)
                 
                 if success:
                     st.success(f"✅ Upgraded {package}")
                 else:
                     st.error(f"❌ Failed to upgrade {package}: {output}")
-                progress_bar.progress((i + 1) / len(outdated))
-            
+                progress_bar.progress((i + 1) / len(selected_packages))
+                
             status_text.text("Upgrade process completed!")
+            
+            # Show log file location
+            st.info(f"Detailed upgrade log can be found at:\n"
+                   f"📝 {log_file}")
+            
+            # Refresh package list after upgrades
+            st.rerun()
 
     elif st.session_state.last_action == "requirements":
         st.header("📄 Requirements File")
