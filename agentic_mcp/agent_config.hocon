@@ -1,0 +1,42 @@
+agents {
+    tech {
+        name = "TechBot"
+        role = "Technical Expert"
+        expertise = [
+            "programming"
+            "system architecture"
+            "debugging"
+        ]
+    }
+    creative {
+        name = "CreativeBot"
+        role = "Creative Consultant"
+        expertise = [
+            "design"
+            "user experience"
+            "innovation"
+        ]
+    }
+    analyst {
+        name = "AnalystBot"
+        role = "Data Analyst"
+        expertise = [
+            "data analysis"
+            "statistics"
+            "research methods"
+        ]
+    }
+    carmax {
+        name = "CarMaxBot"
+        role = "CarMax Specialist"
+        expertise = [
+            "cars"
+            "vehicle sales"
+            "carmax.com"
+        ]
+    }
+}
+            "research methods"
+        ]
+    }
+}
