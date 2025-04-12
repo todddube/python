@@ -1,151 +1,168 @@
 import streamlit as st
 import time
 from datetime import datetime
+import requests
+import json
+from typing import Dict, List, Optional
 from pathlib import Path
 import logging
-from typing import Dict, List, Optional
-import json
-from mcpclient import MCPClient
-import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class AgentMCP:
-    def __init__(self):
-        self.mcp_client = MCPClient()
-        self.agent_id = "demo_agent_1"
-        self.knowledge_base = {}
-        self.ollama_url = "http://localhost:11434/api/generate"
-        self.model = "llama2"
-        self.initialize_storage()
-
-    def initialize_storage(self):
-        """Initialize storage for agent memory"""
-        storage_dir = Path('agent_storage')
-        storage_dir.mkdir(exist_ok=True)
-        self.memory_file = storage_dir / 'agent_memory.json'
+class Agent:
+    def __init__(self, name: str, role: str, expertise: List[str]):
+        self.name = name
+        self.role = role
+        self.expertise = expertise
+        self.conversation_history = []
+        self.ollama_url = "http://localhost:11434/api/chat"
         
-        if self.memory_file.exists():
-            with open(self.memory_file, 'r') as f:
-                self.knowledge_base = json.load(f)
-        else:
-            self.save_memory()
-
-    def save_memory(self):
-        """Save agent memory to file"""
-        with open(self.memory_file, 'w') as f:
-            json.dump(self.knowledge_base, f, indent=4)
-
     def query_llm(self, prompt: str) -> str:
         """Query Ollama LLM"""
+        response = None
         try:
+            context = "\n".join([f"{msg['role']}: {msg['content']}" 
+                               for msg in self.conversation_history[-5:]])
+            
+            full_prompt = f"""
+            You are {self.name}, a {self.role} with expertise in {', '.join(self.expertise)}.
+            Previous conversation:
+            {context}
+            
+            Current query: {prompt}
+            
+            Respond in character, using your expertise to provide insights.
+            """
+            
+            # Updated to use the /api/chat endpoint
             response = requests.post(
-                self.ollama_url,
+                "http://localhost:11434/api/chat",
                 json={
-                    "model": self.model,
-                    "prompt": prompt,
+                    "model": "llama3",
+                    "messages": [
+                        {
+                            "role": "user", 
+                            "content": full_prompt
+                        }
+                    ],
                     "stream": False
-                }
+                },
+                headers={"Content-Type": "application/json"}
             )
+            
+            # Proper error handling for response
             response.raise_for_status()
-            return response.json()['response']
+            
+            # Safe JSON parsing
+            try:
+                result = response.json()
+                return result['message']['content']
+            except json.JSONDecodeError as json_err:
+                logger.error(f"JSON decode error: {str(json_err)}")
+                logger.error(f"Response content: {response.text[:200]}...")  # Log first 200 chars
+                return f"Error parsing response: {str(json_err)}"
+                
+        except requests.exceptions.ConnectionError:
+            return "Error: Could not connect to Ollama server. Is it running?"
         except Exception as e:
             logger.error(f"Error querying LLM: {str(e)}")
+            if response and hasattr(response, 'text'):
+                logger.error(f"Response text: {response.text[:200]}...")  # Log first 200 chars
             return f"Error: {str(e)}"
-
-    def analyze_knowledge(self, query: str) -> str:
-        """Analyze knowledge base using LLM"""
-        context = json.dumps(self.knowledge_base, indent=2)
-        prompt = f"""Given this knowledge base:
-{context}
-
-Query: {query}
-
-Please analyze the information and provide insights. Format your response in markdown."""
-        
-        return self.query_llm(prompt)
-
-    def query_self(self) -> Dict:
-        """Query own status and capabilities through MCP and analyze with LLM"""
-        try:
-            status = self.mcp_client.get_agent_status(self.agent_id)
-            capabilities = self.mcp_client.get_agent_capabilities(self.agent_id)
             
-            # Get LLM analysis
-            analysis = self.query_llm(
-                f"Analyze this agent status and capabilities:\n"
-                f"Status: {status}\n"
-                f"Capabilities: {capabilities}\n"
-                f"What insights can you provide about this agent?"
-            )
-            
-            return {
-                "status": status,
-                "capabilities": capabilities,
-                "llm_analysis": analysis,
-                "timestamp": datetime.now().isoformat()
-            }
-        except Exception as e:
-            logger.error(f"Error querying self: {str(e)}")
-            return {"error": str(e)}
-
-    def update_knowledge(self, key: str, value: any):
-        """Update knowledge base with new information"""
-        self.knowledge_base[key] = {
-            "value": value,
+    def respond(self, query: str) -> str:
+        """Generate a response to a query"""
+        response = self.query_llm(query)
+        self.conversation_history.append({
+            "role": self.role,
+            "content": response,
             "timestamp": datetime.now().isoformat()
-        }
-        self.save_memory()
+        })
+        return response
 
-    def get_knowledge(self, key: str) -> Optional[Dict]:
-        """Retrieve information from knowledge base"""
-        return self.knowledge_base.get(key)
+class MasterAgent:
+    def __init__(self):
+        self.agents = {
+            "tech": Agent("TechBot", "Technical Expert", 
+                         ["programming", "system architecture", "debugging"]),
+            "creative": Agent("CreativeBot", "Creative Consultant", 
+                            ["design", "user experience", "innovation"]),
+            "analyst": Agent("AnalystBot", "Data Analyst", 
+                           ["data analysis", "statistics", "research methods"])
+        }
+        self.conversation_history = []
+        
+    def coordinate_response(self, query: str) -> Dict:
+        """Coordinate responses from all agents"""
+        responses = {}
+        
+        for agent_id, agent in self.agents.items():
+            responses[agent.name] = agent.respond(query)
+            
+        # Record in master history
+        self.conversation_history.append({
+            "query": query,
+            "responses": responses,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        return responses
 
 def main():
     st.set_page_config(
-        page_title="Agentic MCP Demo with LLM",
+        page_title="Multi-Agent MCP Demo",
         page_icon="🤖",
         layout="wide"
     )
-
-    st.title("🤖 Agentic MCP Demo with Llama2")
-    st.write("Self-aware agent using MCP SDK and Ollama LLM")
-
-    # Initialize agent
-    if 'agent' not in st.session_state:
-        st.session_state.agent = AgentMCP()
     
-    # Sidebar controls
+    st.title("🤖 Multi-Agent MCP System")
+    st.write("Ask a question and get responses from multiple AI agents")
+    
+    # Initialize master agent in session state
+    if 'master_agent' not in st.session_state:
+        st.session_state.master_agent = MasterAgent()
+    
+    # Sidebar for agent information
     with st.sidebar:
-        st.header("Agent Controls")
-        
-        # LLM Analysis
-        st.subheader("LLM Analysis")
-        query = st.text_area("Ask about knowledge base:", height=100)
-        if st.button("Analyze"):
-            with st.spinner("Analyzing with Llama2..."):
-                analysis = st.session_state.agent.analyze_knowledge(query)
-                st.markdown(analysis)
-        
-        st.divider()
-        
-        if st.button("Query Self"):
-            with st.spinner("Querying agent status..."):
-                result = st.session_state.agent.query_self()
-                st.session_state.agent.update_knowledge("last_self_query", result)
-
-    # Main content area
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.header("Agent Status")
-        last_query = st.session_state.agent.get_knowledge("last_self_query")
-        if last_query:
-            st.json(last_query["value"])
-            if "llm_analysis" in last_query["value"]:
-                st.subheader("LLM Analysis")
-                st.markdown(last_query["value"]["llm_analysis"])
+        st.header("Active Agents")
+        for agent_id, agent in st.session_state.master_agent.agents.items():
+            st.subheader(f"🤖 {agent.name}")
+            st.write(f"Role: {agent.role}")
+            st.write("Expertise:")
+            for exp in agent.expertise:
+                st.write(f"- {exp}")
+            st.divider()
+    
+    # Main query input
+    query = st.text_area("Enter your question:")
+    if st.button("Ask Agents"):
+        if query:
+            with st.spinner("Agents are thinking..."):
+                responses = st.session_state.master_agent.coordinate_response(query)
+                
+                # Display responses in columns
+                cols = st.columns(len(responses))
+                for i, (agent_name, response) in enumerate(responses.items()):
+                    with cols[i]:
+                        st.markdown(f"### {agent_name}")
+                        st.markdown(response)
+                        st.divider()
         else:
-            st.info("No self-query performed yet")
+            st.warning("Please enter a question first!")
+    
+    # Conversation history
+    if st.session_state.master_agent.conversation_history:
+        st.header("Conversation History")
+        for entry in reversed(st.session_state.master_agent.conversation_history):
+            st.subheader(f"Query: {entry['query']}")
+            st.caption(f"Time: {entry['timestamp']}")
+            
+            for agent_name, response in entry['responses'].items():
+                with st.expander(f"{agent_name}'s Response"):
+                    st.write(response)
+            st.divider()
+
+if __name__ == "__main__":
+    main()

@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 import os
 import time
+import requests
 
 # Configure page and styling
 st.set_page_config(
@@ -34,8 +35,29 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+def check_ollama_server() -> tuple[bool, str]:
+    """Check if Ollama server is running and LLaVA model is available"""
+    try:
+        response = requests.get('http://localhost:11434/api/tags')
+        if response.status_code == 200:
+            models = [model['name'] for model in response.json()['models']]
+            if 'llava' in models:
+                return True, "Server running and LLaVA model available"
+            else:
+                return False, "LLaVA model not found. Please run: ollama pull llava"
+        return False, "Ollama server not responding correctly"
+    except requests.exceptions.ConnectionError:
+        return False, "Ollama server not running. Please start with: ollama serve"
+    except Exception as e:
+        return False, f"Error checking Ollama server: {str(e)}"
+
 def get_llava_response(image_path: str, prompt: str) -> dict:
     """Get response from LLaVA model via Ollama with error handling"""
+    # Check server status first
+    server_ok, error_msg = check_ollama_server()
+    if not server_ok:
+        return {"success": False, "error": error_msg}
+        
     try:
         with st.spinner('🤖 AI is analyzing your image...'):
             response = ollama.chat(
@@ -60,11 +82,31 @@ def save_upload_file_tmp(uploadedfile):
         f.write(uploadedfile.getbuffer())
     return str(temp_file)
 
+def validate_image(file) -> tuple[bool, str]:
+    """Validate uploaded image file"""
+    # Check file size (10MB limit)
+    MAX_SIZE = 10 * 1024 * 1024  # 10MB
+    if file.size > MAX_SIZE:
+        return False, "File size too large. Please upload images under 10MB."
+    
+    try:
+        # Try to open and verify image
+        image = Image.open(file)
+        image.verify()
+        # Rewind file pointer after verify
+        file.seek(0)
+        return True, ""
+    except Exception as e:
+        return False, f"Invalid image file: {str(e)}"
+
 def main():
     # Sidebar configuration
     with st.sidebar:
-        st.image("https://raw.githubusercontent.com/ollama/ollama/main/docs/ollama.png", width=100)
         st.title("LLaVA Vision")
+        server_ok, status_msg = check_ollama_server()
+        status_color = "green" if server_ok else "red"
+        st.markdown(f"Server Status: <span style='color:{status_color}'>{status_msg}</span>", 
+                   unsafe_allow_html=True)
         st.markdown("---")
         st.markdown("""
         ### About
@@ -97,61 +139,50 @@ def main():
     )
     
     if uploaded_file is not None:
-        # Create two columns for image and analysis
-        col1, col2 = st.columns([1, 1])
+        # Validate image first
+        is_valid, error_msg = validate_image(uploaded_file)
         
-        with col1:
-            st.markdown("### Uploaded Image")
-            image = Image.open(uploaded_file)
-            st.image(image, caption='', use_column_width=True, clamp=True)
-        
-        with col2:
-            st.markdown("### AI Analysis")
-            if st.button("🔍 Analyze Image", key="analyze"):
-                # Save and analyze image
-                temp_path = save_upload_file_tmp(uploaded_file)
-                
-                # Get AI response
-                result = get_llava_response(temp_path, custom_prompt)
-                
-                if result["success"]:
-                    st.markdown("#### AI Insights:")
-                    st.markdown(f">{result['content']}")
-                    
-                    # Add confidence disclaimer
-                    st.markdown("---")
-                    st.caption(
-                        "Note: AI analysis is based on probabilities and may not be 100% accurate."
-                    )
-                else:
-                    st.error(f"Error analyzing image: {result['error']}")
-                
-                # Cleanup temporary file
+        if not is_valid:
+            st.error(error_msg)
+        else:
+            # Create two columns for image and analysis
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                st.markdown("### Uploaded Image")
                 try:
-                    os.remove(temp_path)
-                except:
-                    pass
+                    image = Image.open(uploaded_file)
+                    st.image(image, caption='', use_column_width=True, clamp=True)
+                except Exception as e:
+                    st.error(f"Error displaying image: {str(e)}")
+                    return
+            
+            with col2:
+                st.markdown("### AI Analysis")
+                if st.button("🔍 Analyze Image", key="analyze"):
+                    # Save and analyze image
+                    temp_path = save_upload_file_tmp(uploaded_file)
+                    
+                    # Get AI response
+                    result = get_llava_response(temp_path, custom_prompt)
+                    
+                    if result["success"]:
+                        st.markdown("#### AI Insights:")
+                        st.markdown(f">{result['content']}")
+                        
+                        # Add confidence disclaimer
+                        st.markdown("---")
+                        st.caption(
+                            "Note: AI analysis is based on probabilities and may not be 100% accurate."
+                        )
+                    else:
+                        st.error(f"Error analyzing image: {result['error']}")
+                    
+                    # Cleanup temporary file
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
 
 if __name__ == "__main__":
-    try:
-        if len(sys.argv) == 1:
-            file_path = Path(__file__).absolute()
-            subprocess.run([
-                "streamlit", 
-                "run", 
-                str(file_path),
-                "--server.port=8501",
-                "--server.address=localhost",
-                "--theme.primaryColor=#FF4B4B",
-                "--theme.backgroundColor=#FFFFFF",
-                "--theme.secondaryBackgroundColor=#F0F2F6",
-                "--theme.textColor=#262730"
-            ], check=True)
-        else:
-            main()
-    except KeyboardInterrupt:
-        print("\nShutting down gracefully...")
-        sys.exit(0)
-    except Exception as e:
-        print(f"Error starting application: {e}")
-        sys.exit(1)
+    main()

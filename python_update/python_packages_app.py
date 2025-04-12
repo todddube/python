@@ -116,10 +116,12 @@ def create_requirements():
     except subprocess.CalledProcessError as e:
         return False, str(e)
 
-def cleanup_old_files(days=7):
-    """Clean up old requirements and package upgrade files"""
+def cleanup_old_files(days):
+    """Clean up old requirements and package upgrade files
+    Args:
+        days: Number of days to keep files, defaults to 7. If 0, removes all files.
+    """
     current_path = Path(os.path.dirname(os.path.abspath(__file__)))
-    cutoff_date = datetime.now() - timedelta(days=days)
     removed_files = []
     errors = []
     
@@ -131,7 +133,8 @@ def cleanup_old_files(days=7):
     
     for pattern in patterns:
         for file in current_path.glob(pattern):
-            if file.stat().st_mtime < cutoff_date.timestamp():
+            # If days is 0, remove all files, otherwise check date
+            if days == 0 or file.stat().st_mtime < (datetime.now() - timedelta(days=days)).timestamp():
                 try:
                     file.unlink()
                     removed_files.append(file.name)
