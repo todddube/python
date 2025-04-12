@@ -1,5 +1,4 @@
 # my hugging face token
-# "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"
 import torch
 from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
 ## 
