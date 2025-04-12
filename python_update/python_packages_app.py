@@ -62,7 +62,7 @@ def log_upgrade_output(package_name: str, success: bool, output: str, package_ma
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     
     # Use a single log file for all output
-    log_file = output_dir / f'package_upgrades_{package_manager}_{timestamp}.log'
+    log_file = output_dir / f'package_upgrades_{package_manager}_{package_name}_{timestamp}.log'
     
     # Format the log entry with clear separation and status indicators
     log_entry = f"""
@@ -117,19 +117,26 @@ def create_requirements():
         return False, str(e)
 
 def cleanup_old_files(days=7):
-    """Clean up old requirements files"""
+    """Clean up old requirements and package upgrade files"""
     current_path = Path(os.path.dirname(os.path.abspath(__file__)))
     cutoff_date = datetime.now() - timedelta(days=days)
     removed_files = []
     errors = []
     
-    for file in current_path.glob('output/requirements_*.txt'):
-        if file.stat().st_mtime < cutoff_date.timestamp():
-            try:
-                file.unlink()
-                removed_files.append(file.name)
-            except OSError as e:
-                errors.append(f"Error removing {file.name}: {e}")
+    # Patterns to match both requirements and package upgrade logs
+    patterns = [
+        'output/requirements_*.txt',
+        'output/package_upgrades_*.log'
+    ]
+    
+    for pattern in patterns:
+        for file in current_path.glob(pattern):
+            if file.stat().st_mtime < cutoff_date.timestamp():
+                try:
+                    file.unlink()
+                    removed_files.append(file.name)
+                except OSError as e:
+                    errors.append(f"Error removing {file.name}: {e}")
     
     return removed_files, errors
 
@@ -175,7 +182,11 @@ def main():
         
         # Cleanup days settings
         st.sidebar.markdown("---")
-        cleanup_days = st.sidebar.slider("Cleanup Age (days)", 1, 30, 7)
+        cleanup_option = st.sidebar.radio("Cleanup Option", ["By Age", "All Files"])
+        if cleanup_option == "By Age":
+            cleanup_days = st.sidebar.slider("Cleanup Age (days)", 1, 30, 7)
+        else:
+            cleanup_days = 0  # Will remove all files when set to 0
 
     # Main content area
     if st.session_state.last_action == "list":
