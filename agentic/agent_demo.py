@@ -7,10 +7,44 @@ import subprocess
 import streamlit as st
 import requests
 import pyhocon
+import time as py_time  # Import time with alias to avoid conflict
 
 # Add version constants at top of file
 __version__ = "0.1"
 __author__ = "Todd Dube"
+
+def open_ollama_logs_terminal():
+    """Open a terminal window and tail Ollama logs."""
+    try:
+        # Create a logs directory if it doesn't exist
+        logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+        log_file = os.path.join(logs_dir, "ollama_logs.txt")
+        
+        # Create a batch file to run the continuous log fetching
+        batch_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tail_ollama_logs.bat")
+        with open(batch_file, "w") as f:
+            f.write('@echo off\n')
+            f.write(f'title Ollama Logs - {time()}\n')
+            f.write('echo Tailing Ollama API logs...\n')
+            f.write('echo Press Ctrl+C to stop\n')
+            f.write('echo.\n')
+            # Command to continuously poll the Ollama API and append to log file
+            f.write(f':loop\n')
+            f.write(f'powershell -command "try {{ Invoke-RestMethod -Uri http://localhost:11434/api/version }} catch {{ \\"Ollama API Error: $_\\" }}" >> "{log_file}"\n')
+            f.write(f'powershell -command "try {{ Invoke-RestMethod -Uri http://localhost:11434/api/tags }} catch {{ \\"Ollama Tags Error: $_\\" }}" >> "{log_file}"\n')
+            f.write(f'type "{log_file}"\n')
+            f.write('timeout /t 5 /nobreak > nul\n')
+            f.write('cls\n')
+            f.write('goto loop\n')
+        
+        # Open the batch file in a new command prompt window
+        subprocess.Popen(f'start cmd.exe /k "{batch_file}"', shell=True)
+        print(f"Ollama logs terminal opened. Logs saved to: {log_file}")
+        return True
+    except Exception as e:
+        print(f"Error opening Ollama logs terminal: {str(e)}")
+        return False
 
 class CarmaxSearchAgent:
     def __init__(self, max_price=None, min_price=None):
@@ -248,6 +282,94 @@ def init_streamlit():
         st.warning("⚠️ Error initializing Streamlit configuration")
         print(f"Error in init_streamlit: {e}")
 
+def create_sidebar_conversation_animation():
+    """
+    Creates an animated conversation display in the sidebar showing agents talking to each other.
+    This function sets up the CSS for animation and creates a placeholder for the animation.
+    """
+    # Add the animation CSS to the sidebar
+    st.sidebar.markdown("""
+        <style>
+        @keyframes slideInRight {
+            0% { transform: translateX(100%); opacity: 0; }
+            100% { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideInLeft {
+            0% { transform: translateX(-100%); opacity: 0; }
+            100% { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .chat-bubble-right {
+            background-color: #e1f5fe;
+            border-radius: 15px;
+            padding: 8px 12px;
+            margin: 5px 0 5px auto;
+            max-width: 80%;
+            animation: slideInRight 0.5s ease-out, pulse 2s infinite;
+            position: relative;
+        }
+        .chat-bubble-left {
+            background-color: #f0f4c3;
+            border-radius: 15px;
+            padding: 8px 12px;
+            margin: 5px auto 5px 0;
+            max-width: 80%;
+            animation: slideInLeft 0.5s ease-out, pulse 2s infinite;
+            position: relative;
+        }
+        .agent-name {
+            font-weight: bold;
+            font-size: 0.8em;
+            margin-bottom: 2px;
+        }
+        .chat-container {
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            background-color: #f9f9f9;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    # Create a container for the animation in the sidebar
+    st.sidebar.markdown("### 🎬 Live Agent Conversation")
+    chat_container = st.sidebar.empty()
+    
+    # Return the container for later updates
+    return chat_container
+
+def update_sidebar_animation(container, speakers, messages):
+    """
+    Updates the sidebar animation with new conversation messages.
+    
+    Args:
+        container: The Streamlit container to update
+        speakers: List of speaker names with their avatars
+        messages: List of message strings
+    """
+    html_content = '<div class="chat-container">'
+    
+    for i, (speaker, msg) in enumerate(zip(speakers, messages)):
+        # Alternate between left and right bubbles
+        bubble_class = "chat-bubble-left" if i % 2 == 0 else "chat-bubble-right"
+        
+        # Create the chat bubble
+        html_content += f"""
+        <div class="{bubble_class}">
+            <div class="agent-name">{speaker}</div>
+            {msg[:100] + '...' if len(msg) > 100 else msg}
+        </div>
+        """
+    
+    html_content += '</div>'
+    container.markdown(html_content, unsafe_allow_html=True)
+
 def ollama_check():
     """Check if the Ollama service is running."""
     
@@ -361,6 +483,9 @@ def main():
             st.sidebar.markdown(f"{agent.avatar} 🟢 {agent.name} ready")
         st.sidebar.markdown("---")
         
+        # Create animated conversation display in the sidebar
+        chat_container = create_sidebar_conversation_animation()
+        
         if st.button("Start Conversation"):
             # Create vehicle agent first, before starting conversation
             vehicle_agent = VehicleAgent()
@@ -383,6 +508,11 @@ def main():
                             st.markdown(f"**{speaker}**:")
                             st.markdown(f">{msg}", unsafe_allow_html=True)
                             st.markdown("---")
+                    
+                    # Update sidebar animation
+                    speakers = [speaker for speaker, _ in st.session_state.conversation]
+                    messages = [msg for _, msg in st.session_state.conversation]
+                    update_sidebar_animation(chat_container, speakers, messages)
                             
             # Now analyze conversation using the existing vehicle_agent
             vehicle_mentions = vehicle_agent.analyze_conversation(st.session_state.conversation)
@@ -397,5 +527,6 @@ def main():
 # 
 if __name__ == "__main__":
     init_streamlit()  # Must be the first Streamlit command
+    open_ollama_logs_terminal()  # Open Ollama logs terminal on startup
     threading.Timer(2.0, open_chromium).start()
     main()

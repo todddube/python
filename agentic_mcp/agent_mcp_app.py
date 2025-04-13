@@ -1,356 +1,269 @@
-import streamlit as st
-import time
-import random
-from datetime import datetime
-import requests
-import json
-from typing import Dict, List, Optional, Any
-from pathlib import Path
-import logging
 import os
+import streamlit as st
+import ollama
+import time
 import glob
-import PyPDF2
-import docx
-import fitz  # PyMuPDF for better PDF handling
+import tempfile
+import logging
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Union
+import json
+import asyncio
+from datetime import datetime
+from langchain_community.document_loaders import (
+    TextLoader, 
+    PDFMinerLoader,
+    CSVLoader,
+    Docx2txtLoader,
+    UnstructuredExcelLoader,
+)
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain.chains import RetrievalQA
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain_community.llms import Ollama
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+log_directory = os.path.join(os.path.dirname(__file__), "logs")
+os.makedirs(log_directory, exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(log_directory, "documents_log.txt")),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("DocumentIndexer")
 
-class MCPWrapper:
-    """Model Context Protocol wrapper for LLM interactions"""
-    
-    def __init__(self, model_name: str = "llama3"):
+# MCP Server Configuration
+class MCPServer:
+    def __init__(self, model_name="llama3"):
         self.model_name = model_name
-        self.api_url = "http://localhost:11434/api/chat"
+        self.embeddings = None
+        self.vector_store = None
+        self.qa_chain = None
+        self.documents_indexed = 0
+        self.status = "Not Started"
+        self.is_running = False
         
-    def format_context(self, 
-                       query: str, 
-                       role: str, 
-                       context: str = "", 
-                       metadata: Dict[str, Any] = None) -> Dict:
-        """Format query using MCP standards"""
-        if not metadata:
-            metadata = {}
-            
-        # Create MCP-formatted context
-        return {
-            "model": self.model_name,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": f"You are acting as {role}. Respond according to your role and expertise."
-                },
-                {
-                    "role": "user",
-                    "content": f"Context:\n{context}\n\nQuery: {query}"
-                }
-            ],
-            "stream": False,
-            "metadata": {
-                "protocol_version": "mcp-v1",
-                "timestamp": datetime.now().isoformat(),
-                **metadata
-            }
-        }
-    
-    def query(self, 
-              query: str, 
-              role: str, 
-              context: str = "", 
-              metadata: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Execute MCP-formatted query to the model"""
-        if not metadata:
-            metadata = {}
-            
-        mcp_request = self.format_context(query, role, context, metadata)
-        response = None
-        
+    def initialize_embeddings(self):
+        """Initialize the embeddings model from Ollama"""
         try:
-            # Log the MCP request
-            logger.info(f"MCP Request: {json.dumps(mcp_request, indent=2)[:200]}...")
+            self.embeddings = OllamaEmbeddings(model=self.model_name)
+            return True
+        except Exception as e:
+            logger.error(f"Error initializing embeddings: {str(e)}")
+            return False
+    
+    def get_loader_for_file(self, file_path: str):
+        """Get the appropriate document loader based on file extension"""
+        ext = file_path.lower().split('.')[-1]
+        try:
+            if ext == 'txt' or ext == 'md' or ext == 'py' or ext == 'js' or ext == 'html' or ext == 'css':
+                return TextLoader(file_path, encoding='utf-8', autodetect_encoding=True)
+            elif ext == 'pdf':
+                return PDFMinerLoader(file_path)
+            elif ext == 'csv':
+                return CSVLoader(file_path)
+            elif ext == 'docx':
+                return Docx2txtLoader(file_path)
+            elif ext == 'xlsx' or ext == 'xls':
+                return UnstructuredExcelLoader(file_path)
+            else:
+                logger.warning(f"Unsupported file format: {ext} for file {file_path}")
+                return None
+        except Exception as e:
+            logger.error(f"Error getting loader for {file_path}: {str(e)}")
+            return None
+
+    def index_files(self, directory_path: str):
+        """Index all files in the given directory recursively"""
+        self.status = "Indexing"
+        self.is_running = True
+        
+        # Initialize embeddings
+        if not self.initialize_embeddings():
+            self.status = "Failed - Embeddings initialization error"
+            self.is_running = False
+            return False
+        
+        # Get all files recursively
+        try:
+            all_files = []
+            for root, dirs, files in os.walk(directory_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    all_files.append(file_path)
             
-            # Make the API call
-            response = requests.post(
-                self.api_url,
-                json=mcp_request,
-                headers={"Content-Type": "application/json"}
+            # Process the files
+            documents = []
+            for file_path in all_files:
+                try:
+                    loader = self.get_loader_for_file(file_path)
+                    if loader:
+                        file_docs = loader.load()
+                        if file_docs:
+                            documents.extend(file_docs)
+                            self.documents_indexed += 1
+                            logger.info(f"Indexed: {file_path}")
+                except Exception as e:
+                    logger.error(f"Error processing {file_path}: {str(e)}")
+            
+            # Split documents
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=100,
             )
-            response.raise_for_status()
+            split_docs = text_splitter.split_documents(documents)
             
-            # Parse response
-            result = response.json()
+            # Create vector store
+            if split_docs:
+                self.vector_store = FAISS.from_documents(
+                    split_docs, 
+                    self.embeddings
+                )
+                
+                # Create QA chain
+                self.qa_chain = RetrievalQA.from_chain_type(
+                    llm=Ollama(model=self.model_name, callbacks=[StreamingStdOutCallbackHandler()]),
+                    chain_type="stuff",
+                    retriever=self.vector_store.as_retriever(),
+                    return_source_documents=True
+                )
+                
+                self.status = f"Ready - Indexed {self.documents_indexed} files"
+                logger.info(f"Completed indexing {self.documents_indexed} files")
+            else:
+                self.status = "No documents indexed"
+                logger.warning("No documents were indexed")
             
-            # Format as MCP response
-            return {
-                "success": True,
-                "content": result["message"]["content"],
-                "metadata": {
-                    "protocol_version": "mcp-v1",
-                    "model": self.model_name,
-                    "timestamp": datetime.now().isoformat(),
-                    **metadata
-                }
-            }
+            self.is_running = False
+            return True
+            
         except Exception as e:
-            logger.error(f"MCP query error: {str(e)}")
-            if response and hasattr(response, 'text'):
-                logger.error(f"Response content: {response.text[:200]}...")
-            return {
-                "success": False,
-                "error": str(e),
-                "metadata": {
-                    "protocol_version": "mcp-v1",
-                    "timestamp": datetime.now().isoformat()
-                }
-            }
-
-class Agent:
-    def __init__(self, name: str, role: str, expertise: List[str]):
-        self.name = name
-        self.role = role
-        self.expertise = expertise
-        self.conversation_history = []
-        # Use MCP wrapper instead of direct Ollama calls
-        self.mcp = MCPWrapper(model_name="llama3")
-        
-    def query_llm(self, prompt: str) -> str:
-        """Query Ollama LLM using MCP wrapper"""
-        # Format conversation history as context
-        context = "\n".join([f"{msg['role']}: {msg['content']}" 
-                          for msg in self.conversation_history[-5:]])
-        
-        # Add agent metadata for MCP
-        metadata = {
-            "agent": {
-                "name": self.name,
-                "role": self.role,
-                "expertise": self.expertise
-            },
-            "conversation_turns": len(self.conversation_history)
-        }
-        
-        # Query using MCP wrapper
-        response = self.mcp.query(
-            query=prompt,
-            role=f"{self.name}, a {self.role}",
-            context=context,
-            metadata=metadata
-        )
-        
-        # Handle response
-        if response["success"]:
-            return response["content"]
-        else:
-            return f"Error: {response.get('error', 'Unknown error')}"
-            
-    def respond(self, query: str) -> str:
-        """Generate a response to a query"""
-        response = self.query_llm(query)
-        self.conversation_history.append({
-            "role": self.role,
-            "content": response,
-            "timestamp": datetime.now().isoformat()
-        })
-        return response
-
-class MasterAgent:
-    def __init__(self):
-        self.agents = {
-            "tech": Agent("TechBot", "Technical Expert", 
-                         ["programming", "system architecture", "debugging"]),
-            "creative": Agent("CreativeBot", "Creative Consultant", 
-                            ["design", "user experience", "innovation"]),
-            "analyst": Agent("AnalystBot", "Data Analyst", 
-                           ["data analysis", "statistics", "research methods"])
-        }
-        self.conversation_history = []
-        
-    def coordinate_response(self, query: str) -> Dict:
-        """Coordinate responses from all agents"""
-        responses = {}
-        
-        for agent_id, agent in self.agents.items():
-            # Update status to "thinking"
-            if 'agent_status' in st.session_state:
-                st.session_state.agent_status[agent_id] = "thinking"
-                st.session_state.status_placeholders[agent_id].markdown(
-                    f"⏳ <span style='color:orange;'>Thinking</span>", unsafe_allow_html=True
-                )
-                # Create thinking animation effect
-                time.sleep(0.5)  # Small delay to show status change
-            
-            # Update to responding
-            if 'agent_status' in st.session_state:
-                st.session_state.agent_status[agent_id] = "responding"
-                st.session_state.status_placeholders[agent_id].markdown(
-                    f"✏️ <span style='color:blue;'>Responding</span>", unsafe_allow_html=True
-                )
-            
-            # Get the actual response
-            response = agent.respond(query)
-            responses[agent.name] = response
-            
-            # Update to complete
-            if 'agent_status' in st.session_state:
-                st.session_state.agent_status[agent_id] = "complete"
-                st.session_state.status_placeholders[agent_id].markdown(
-                    f"✅ <span style='color:green;'>Complete</span>", unsafe_allow_html=True
-                )
-        
-        # Record in master history
-        self.conversation_history.append({
-            "query": query,
-            "responses": responses,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        return responses
-
-class DocumentProcessor:
-    """Process and search local documents to provide context for MCP"""
+            logger.error(f"Error during indexing process: {str(e)}")
+            self.status = f"Error - {str(e)}"
+            self.is_running = False
+            return False
     
-    def __init__(self, documents_path: str = None):
-        self.documents_path = documents_path or os.path.join(os.path.expanduser("~"), "Documents")
-        self.document_index = {}
-        self.supported_extensions = ['.pdf', '.txt', '.docx', '.md']
-        self.initialized = False
-        
-    def initialize(self):
-        """Scan and prepare document index"""
-        st.toast("Indexing documents, please wait...")
+    def ask(self, query: str) -> Dict[str, Any]:
+        """Query the indexed documents"""
+        if not self.qa_chain:
+            return {"answer": "No documents have been indexed yet.", "sources": []}
         
         try:
-            for ext in self.supported_extensions:
-                files = glob.glob(os.path.join(self.documents_path, f"**/*{ext}"), recursive=True)
-                for file_path in files:
-                    self._process_file(file_path)
+            result = self.qa_chain({"query": query})
+            sources = []
+            if "source_documents" in result:
+                for doc in result["source_documents"]:
+                    if hasattr(doc, "metadata") and "source" in doc.metadata:
+                        sources.append(doc.metadata["source"])
             
-            self.initialized = True
-            st.toast("Document indexing complete.")
+            return {
+                "answer": result["result"],
+                "sources": list(set(sources))  # Remove duplicates
+            }
         except Exception as e:
-            logger.error(f"Error during document indexing: {str(e)}")
-            st.toast("Error during document indexing.")
+            logger.error(f"Error querying documents: {str(e)}")
+            return {"answer": f"Error: {str(e)}", "sources": []}
 
-    def _process_file(self, file_path: str):
-        """Process individual file and add to index"""
-        try:
-            file_extension = Path(file_path).suffix.lower()
-            content = ""
-            
-            if file_extension == ".pdf":
-                with fitz.open(file_path) as pdf:
-                    for page in pdf:
-                        content += page.get_text()
-            elif file_extension == ".txt":
-                with open(file_path, "r", encoding="utf-8") as txt_file:
-                    content = txt_file.read()
-            elif file_extension == ".docx":
-                doc = docx.Document(file_path)
-                content = "\n".join([para.text for para in doc.paragraphs])
-            elif file_extension == ".md":
-                with open(file_path, "r", encoding="utf-8") as md_file:
-                    content = md_file.read()
-            
-            self.document_index[file_path] = content
-        except Exception as e:
-            logger.error(f"Error processing file {file_path}: {str(e)}")
+# Streamlit UI
+st.set_page_config(
+    page_title="OneDrive Documents Indexer",
+    page_icon="📚",
+    layout="wide"
+)
 
+# Initialize server instance in session state if not already present
+if 'mcp_server' not in st.session_state:
+    st.session_state.mcp_server = MCPServer()
+
+if 'indexing_thread' not in st.session_state:
+    st.session_state.indexing_thread = None
+
+mcp_server = st.session_state.mcp_server
+
+st.title("OneDrive Documents Indexer")
+st.write("Index and search all documents in your OneDrive Documents folder using Ollama's llama3 model")
+
+# Get OneDrive Documents path
+onedrive_path = os.path.expanduser("~/OneDrive/Documents")
+
+with st.sidebar:
+    st.subheader("Settings")
+    
+    # Model selection
+    model_options = ["llama3", "llama3:latest", "mistral", "phi3"]
+    selected_model = st.selectbox("Select Ollama Model", model_options, index=0)
+    
+    # Index button
+    if st.button("Start Indexing"):
+        if not mcp_server.is_running:
+            mcp_server.model_name = selected_model
+            
+            # Create a progress message
+            progress_placeholder = st.empty()
+            progress_placeholder.info("Starting indexing process...")
+            
+            # Start indexing in a separate thread to keep UI responsive
+            import threading
+            
+            def index_documents():
+                try:
+                    mcp_server.index_files(onedrive_path)
+                except Exception as e:
+                    logger.error(f"Error in indexing thread: {str(e)}")
+                
+            st.session_state.indexing_thread = threading.Thread(target=index_documents)
+            st.session_state.indexing_thread.start()
+    
+    # Show indexing status
+    st.subheader("Status")
+    status_placeholder = st.empty()
+
+# Main content area
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    # Query input
+    query = st.text_area("Ask a question about your documents", height=100)
+    if st.button("Search"):
+        if mcp_server.vector_store is not None:
+            with st.spinner("Searching documents..."):
+                result = mcp_server.ask(query)
+                st.subheader("Answer")
+                st.write(result["answer"])
+                
+                if result["sources"]:
+                    st.subheader("Sources")
+                    for source in result["sources"]:
+                        st.write(f"- {source}")
+        else:
+            st.error("Please index your documents first")
+
+with col2:
+    # Files indexed information
+    st.subheader("Indexing Statistics")
+    st.metric("Files Indexed", mcp_server.documents_indexed)
+    
+    # Update status in sidebar
+    if mcp_server.is_running:
+        status_placeholder.info(f"Status: {mcp_server.status}")
+    elif mcp_server.documents_indexed > 0:
+        status_placeholder.success(f"Status: {mcp_server.status}")
+    else:
+        status_placeholder.info("Status: Not started")
+
+# Footer
+st.markdown("---")
+st.caption("Built with Streamlit and Ollama LLM")
+
+# Main app execution
 def main():
-    st.set_page_config(
-        page_title="Multi-Agent MCP Demo",
-        page_icon="🤖",
-        layout="wide"
-    )
-    
-    st.title("🤖 Multi-Agent MCP System")
-    st.write("Ask a question and get responses from multiple AI agents")
-    
-    # Initialize master agent in session state
-    if 'master_agent' not in st.session_state:
-        st.session_state.master_agent = MasterAgent()
-    
-    # Initialize agent status tracking
-    if 'agent_status' not in st.session_state:
-        st.session_state.agent_status = {
-            agent_id: "idle" for agent_id in st.session_state.master_agent.agents.keys()
-        }
-    
-    # Add status animation placeholders
-    if 'status_placeholders' not in st.session_state:
-        st.session_state.status_placeholders = {}
-    
-    # Sidebar for agent information
-    with st.sidebar:
-        st.header("Active Agents")
-        
-        # Create status indicators for each agent
-        for agent_id, agent in st.session_state.master_agent.agents.items():
-            col1, col2 = st.columns([3, 1])
-            
-            with col1:
-                st.subheader(f"🤖 {agent.name}")
-                st.write(f"Role: {agent.role}")
-                expertise_text = ", ".join(agent.expertise[:2])
-                if len(agent.expertise) > 2:
-                    expertise_text += "..."
-                st.caption(f"Expertise: {expertise_text}")
-            
-            with col2:
-                # Create status indicator
-                status = st.session_state.agent_status.get(agent_id, "idle")
-                if status == "thinking":
-                    st.markdown("⏳ <span style='color:orange;'>Thinking</span>", unsafe_allow_html=True)
-                elif status == "responding":
-                    st.markdown("✏️ <span style='color:blue;'>Responding</span>", unsafe_allow_html=True)
-                elif status == "complete":
-                    st.markdown("✅ <span style='color:green;'>Complete</span>", unsafe_allow_html=True)
-                else:
-                    st.markdown("💤 <span style='color:gray;'>Idle</span>", unsafe_allow_html=True)
-                
-                # Store placeholder for animation updates
-                st.session_state.status_placeholders[agent_id] = st.empty()
-            
-            st.divider()
-        
-        # Add a reset button to clear statuses
-        if st.button("Reset Agent Status"):
-            for agent_id in st.session_state.agent_status:
-                st.session_state.agent_status[agent_id] = "idle"
-            st.rerun()
-    
-    # Main query input
-    query = st.text_area("Enter your question:")
-    if st.button("Ask Agents"):
-        if query:
-            # Reset agent statuses before starting
-            for agent_id in st.session_state.agent_status:
-                st.session_state.agent_status[agent_id] = "idle"
-            
-            with st.spinner("Agents are processing your query..."):
-                responses = st.session_state.master_agent.coordinate_response(query)
-                
-                # Display responses in columns
-                cols = st.columns(len(responses))
-                for i, (agent_name, response) in enumerate(responses.items()):
-                    with cols[i]:
-                        st.markdown(f"### {agent_name}")
-                        st.markdown(response)
-                        st.divider()
-        else:
-            st.warning("Please enter a question first!")
-    
-    # Conversation history
-    if st.session_state.master_agent.conversation_history:
-        st.header("Conversation History")
-        for entry in reversed(st.session_state.master_agent.conversation_history):
-            st.subheader(f"Query: {entry['query']}")
-            st.caption(f"Time: {entry['timestamp']}")
-            
-            for agent_name, response in entry['responses'].items():
-                with st.expander(f"{agent_name}'s Response"):
-                    st.write(response)
-            st.divider()
+    # This function is a placeholder for future functionality if needed
+    pass
 
 if __name__ == "__main__":
     main()

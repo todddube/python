@@ -1,0 +1,10 @@
+=== MCP Server Log Started at 2025-04-13T08:38:01.887071 ===
+[2025-04-13T08:38:01.887071] MCP Server initialized
+=== MCP Server Log Started at 2025-04-13T08:41:08.856102 ===
+[2025-04-13T08:41:08.856619] MCP Server initialized
+[2025-04-13T08:41:13.645513] Terminal windows reopened
+=== MCP Server Log Started at 2025-04-13T08:41:19.412744 ===
+[2025-04-13T08:41:19.416745] Terminal windows reopened
+[2025-04-13T08:41:24.487738] Started MCP server on http://localhost:8000
+[2025-04-13T08:41:24.524743] Server starting on http://localhost:8000
+[2025-04-13T08:43:05.999253] Terminal windows reopened
