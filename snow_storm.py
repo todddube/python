@@ -31,7 +31,7 @@ GROUND_HEIGHT = 10  # Height of snow accumulation area at the bottom
 # Settings dialog class
 class SettingsDialog:
     def __init__(self):
-        self.dialog_rect = pygame.Rect(SCREEN_WIDTH//4, SCREEN_HEIGHT//4, 450, 350)
+        self.dialog_rect = pygame.Rect(SCREEN_WIDTH//4, SCREEN_HEIGHT//4, 500, 750)
         self.active = False
         self.font = pygame.font.Font(None, 32)
         self.small_font = pygame.font.Font(None, 24)
@@ -260,6 +260,7 @@ class SettingsDialog:
 settings_dialog = SettingsDialog()
 
 # Snow accumulation
+global accumulated_snow
 accumulated_snow = [[0 for _ in range(SCREEN_WIDTH)] for _ in range(GROUND_HEIGHT)]
 max_accumulation = 80  # Maximum height of accumulated snow
 
@@ -345,6 +346,23 @@ while running:
                         SNOWFLAKE_SIZE_MIN = int(new_settings["SNOWFLAKE_SIZE_MIN"])
                         SNOWFLAKE_SIZE_MAX = int(new_settings["SNOWFLAKE_SIZE_MAX"])
                         GROUND_HEIGHT = int(new_settings["GROUND_HEIGHT"])
+                        
+                        # Update existing snowflakes to use new settings
+                        for flake in snowflakes:
+                            flake.reset()
+                        
+                        # Adjust snowflake count if needed
+                        current_count = len(snowflakes)
+                        if current_count < SNOWFLAKE_COUNT:
+                            # Add more snowflakes if needed
+                            for _ in range(SNOWFLAKE_COUNT - current_count):
+                                snowflakes.append(Snowflake())
+                        elif current_count > SNOWFLAKE_COUNT:
+                            # Remove excess snowflakes if needed
+                            snowflakes[:] = snowflakes[:SNOWFLAKE_COUNT]
+                        # Recreate snow accumulation array with new ground height
+                        accumulated_snow = [[0 for _ in range(SCREEN_WIDTH)] for _ in range(GROUND_HEIGHT)]
+                        accumulated_snow = [[0 for _ in range(SCREEN_WIDTH)] for _ in range(GROUND_HEIGHT)]
     
     # Fill the screen with dark blue
     screen.fill(DARK_BLUE)
