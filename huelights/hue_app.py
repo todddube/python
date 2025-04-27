@@ -112,8 +112,11 @@ class HueController:
         try:
             # Hue brightness is 1-254, convert to percentage
             bri = light.state.get('bri', 0)
+            logger.info(f"Light {light.name} brightness: {bri}")
+            # Convert to percentage (0-100%)
             return max(1, min(100, int((bri / 254) * 100)))
         except AttributeError:
+            logger.info(f"ERROR - Light {light.name} has no brightness attribute")
             return 0
 
     @staticmethod
@@ -304,32 +307,32 @@ class HueApp:
                                         except Exception as e:
                                             st.error(f"Error controlling light: {str(e)}")
                                 
-                                # Only show brightness controls if light is on
-                                if self.controller.get_light_state(light):
-                                    # Brightness control row
-                                    bcol1, bcol2 = st.columns([3, 1])
+                                # Always show brightness controls regardless of light state
+                                # Brightness control row
+                                bcol1, bcol2 = st.columns([3, 1])
+                                
+                                with bcol1:
+                                    logger.info(f"Light {light.name} brightness: {self.controller.get_light_brightness(light)}")    
+                                    current_brightness = self.controller.get_light_brightness(light)
+                                    new_brightness = st.slider(
+                                        "Brightness", 
+                                        min_value=1, 
+                                        max_value=100, 
+                                        value=current_brightness,
+                                        key=f"brightness_{light.id_}_in_group_{group.id_}"
+                                    )
                                     
-                                    with bcol1:
-                                        current_brightness = self.controller.get_light_brightness(light)
-                                        new_brightness = st.slider(
-                                            "Brightness", 
-                                            min_value=1, 
-                                            max_value=100, 
-                                            value=current_brightness,
-                                            key=f"brightness_{light.id_}_in_group_{group.id_}"
-                                        )
-                                        
-                                        # Only update if brightness has changed
-                                        if new_brightness != current_brightness:
-                                            try:
-                                                self.controller.set_light_brightness(light, new_brightness)
-                                                # Don't rerun to avoid resetting slider
-                                            except Exception as e:
-                                                st.error(f"Error setting brightness: {str(e)}")
-                                    
-                                    with bcol2:
-                                        current_brightness = self.controller.get_light_brightness(light)
-                                        st.write(f"**{current_brightness}%**")
+                                    # Only update if brightness has changed and light is on
+                                    if new_brightness != current_brightness and self.controller.get_light_state(light):
+                                        try:
+                                            self.controller.set_light_brightness(light, new_brightness)
+                                            # Don't rerun to avoid resetting slider
+                                        except Exception as e:
+                                            st.error(f"Error setting brightness: {str(e)}")
+                                
+                                with bcol2:
+                                    current_brightness = self.controller.get_light_brightness(light)
+                                    st.write(f"**{current_brightness}%**")
                     else:
                         st.info("No lights in this group")
                 
