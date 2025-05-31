@@ -1,5 +1,5 @@
 @echo off
-title Ollama Logs - 1744549800.824507
+title Ollama Logs - 1748282273.7865736
 echo Tailing Ollama API logs...
 echo Press Ctrl+C to stop
 echo.

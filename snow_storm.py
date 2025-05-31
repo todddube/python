@@ -19,14 +19,14 @@ BLACK = (0, 0, 0)
 DARK_BLUE = (25, 25, 50)
 
 # Snow simulation parameters - these can be adjusted
-SNOWFLAKE_COUNT = 1500  # Number of active snowflakes
-SNOW_RATE = 10  # How many snowflakes to add per frame (higher = more snow)
-SNOW_SPEED_MIN = 1  # Minimum snow falling speed
-SNOW_SPEED_MAX = 3  # Maximum snow falling speed
-WIND_FACTOR = 0.5  # How much wind affects the snowflakes horizontally
-SNOWFLAKE_SIZE_MIN = 1  # Minimum size of a snowflake
-SNOWFLAKE_SIZE_MAX = 3  # Maximum size of a snowflake
-GROUND_HEIGHT = 10  # Height of snow accumulation area at the bottom
+SNOWFLAKE_COUNT = 5000      # Number of active snowflakes
+SNOW_RATE = 10              # How many snowflakes to add per frame (higher = more snow)
+SNOW_SPEED_MIN = 1          # Minimum snow falling speed
+SNOW_SPEED_MAX = 3          # Maximum snow falling speed
+WIND_FACTOR = 0.5           # How much wind affects the snowflakes horizontally
+SNOWFLAKE_SIZE_MIN = 1      # Minimum size of a snowflake
+SNOWFLAKE_SIZE_MAX = 3      # Maximum size of a snowflake
+GROUND_HEIGHT = 10          # Height of snow accumulation area at the bottom
 
 # Settings dialog class
 class SettingsDialog:
@@ -156,7 +156,9 @@ class SettingsDialog:
         # Check if OK button clicked
         ok_rect = pygame.Rect(self.dialog_rect.centerx - 110, self.dialog_rect.bottom - 40, 100, 30)
         if ok_rect.collidepoint(pos):
-            self.active = False
+            # Apply settings but keep dialog open
+            self.apply_settings()
+            # Return False to indicate the dialog is still active
             return True
         
         # Check if Cancel button clicked
@@ -228,7 +230,7 @@ class SettingsDialog:
         except ValueError:
             # If conversion fails, revert to previous value
             self.input_text = str(self.settings[setting])
-        
+            
     def handle_keydown(self, event):
         if not self.active or self.selected is None:
             return
@@ -256,6 +258,44 @@ class SettingsDialog:
             
     def get_values(self):
         return self.settings
+        
+    def apply_settings(self):
+        """Apply current settings to the simulation"""
+        global SNOWFLAKE_COUNT, SNOW_RATE, SNOW_SPEED_MIN, SNOW_SPEED_MAX, WIND_FACTOR
+        global SNOWFLAKE_SIZE_MIN, SNOWFLAKE_SIZE_MAX, GROUND_HEIGHT, accumulated_snow, snowflakes
+        
+        # Make sure any selected input is applied first
+        if self.selected:
+            self.apply_input_text(self.selected)
+        
+        # Update global settings
+        SNOWFLAKE_COUNT = int(self.settings["SNOWFLAKE_COUNT"])
+        SNOW_RATE = int(self.settings["SNOW_RATE"])
+        SNOW_SPEED_MIN = float(self.settings["SNOW_SPEED_MIN"])
+        SNOW_SPEED_MAX = float(self.settings["SNOW_SPEED_MAX"])
+        WIND_FACTOR = float(self.settings["WIND_FACTOR"])
+        SNOWFLAKE_SIZE_MIN = int(self.settings["SNOWFLAKE_SIZE_MIN"])
+        SNOWFLAKE_SIZE_MAX = int(self.settings["SNOWFLAKE_SIZE_MAX"])
+        
+        # Handle ground height change which requires recreating accumulated snow
+        old_ground_height = GROUND_HEIGHT
+        GROUND_HEIGHT = int(self.settings["GROUND_HEIGHT"])
+        if GROUND_HEIGHT != old_ground_height:
+            accumulated_snow = [[0 for _ in range(SCREEN_WIDTH)] for _ in range(GROUND_HEIGHT)]
+        
+        # Update existing snowflakes to use new settings
+        for flake in snowflakes:
+            flake.reset()
+        
+        # Adjust snowflake count if needed
+        current_count = len(snowflakes)
+        if current_count < SNOWFLAKE_COUNT:
+            # Add more snowflakes if needed
+            for _ in range(SNOWFLAKE_COUNT - current_count):
+                snowflakes.append(Snowflake())
+        elif current_count > SNOWFLAKE_COUNT:
+            # Remove excess snowflakes if needed
+            snowflakes[:] = snowflakes[:SNOWFLAKE_COUNT]
 
 settings_dialog = SettingsDialog()
 
@@ -292,11 +332,33 @@ class Snowflake:
         if self.y >= ground_level - accumulated_snow[0][x_int]:
             # Accumulate snow where the snowflake landed
             col_index = int(min(self.x, SCREEN_WIDTH - 1))
-            # Find the lowest available position in this column
+            
+            # Calculate accumulation amount - faster and more pronounced
+            # Snowflakes in the middle third of screen accumulate more
+            screen_middle = SCREEN_WIDTH / 2
+            distance_from_middle = abs(col_index - screen_middle) / (SCREEN_WIDTH / 2)
+            # More snow in the middle, less at edges (inverse of distance)
+            middle_factor = 1.0 - (distance_from_middle * 0.6)
+            
+            # Snowflakes with larger sizes accumulate more
+            size_factor = self.size / SNOWFLAKE_SIZE_MAX
+            
+            # Calculate how many units of snow to add (1-4 based on factors)
+            snow_amount = max(1, int(2 * size_factor * middle_factor + random.random()))
+            
+            # Find available positions in this column and add snow
+            empty_spaces = 0
             for i in range(GROUND_HEIGHT - 1):
                 if accumulated_snow[i][col_index] == 0:
+                    empty_spaces += 1
+                    
+            # Add snow up to calculated amount, if there's space
+            snow_added = 0
+            for i in range(GROUND_HEIGHT - 1):
+                if accumulated_snow[i][col_index] == 0 and snow_added < snow_amount:
                     accumulated_snow[i][col_index] = 1
-                    break
+                    snow_added += 1
+                    
             self.reset()
         elif self.y > SCREEN_HEIGHT:
             self.reset()
@@ -311,7 +373,17 @@ def draw_accumulated_snow():
     for y in range(GROUND_HEIGHT):
         for x in range(SCREEN_WIDTH):
             if accumulated_snow[y][x] == 1:
-                pygame.draw.rect(screen, WHITE, (x, SCREEN_HEIGHT - GROUND_HEIGHT + y, 1, 1))
+                # Add a subtle gradient effect - whiter at the top, slightly blue-tinted at the bottom
+                # This creates a more natural snow pile look
+                depth_factor = 1.0 - (y / GROUND_HEIGHT * 0.2)  # 0.8-1.0 range based on depth
+                snow_color = (int(255 * depth_factor), int(255 * depth_factor), int(255 * 0.95 * depth_factor))
+                
+                # Make snow pixels slightly larger near the bottom for a more pronounced look
+                pixel_size = 1
+                if y > GROUND_HEIGHT * 0.7:  # Bottom 30%
+                    pixel_size = 2
+                
+                pygame.draw.rect(screen, snow_color, (x, SCREEN_HEIGHT - GROUND_HEIGHT + y, pixel_size, pixel_size))
 
 # Main game loop
 running = True
@@ -334,35 +406,9 @@ while running:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             # Handle mouse clicks for settings dialog
             if event.button == 1:  # Left mouse button
-                if settings_dialog.handle_click(event.pos):
-                    # If settings were changed, update the simulation parameters
-                    if not settings_dialog.active:
-                        new_settings = settings_dialog.get_values()
-                        SNOWFLAKE_COUNT = int(new_settings["SNOWFLAKE_COUNT"])
-                        SNOW_RATE = int(new_settings["SNOW_RATE"])
-                        SNOW_SPEED_MIN = float(new_settings["SNOW_SPEED_MIN"])
-                        SNOW_SPEED_MAX = float(new_settings["SNOW_SPEED_MAX"])
-                        WIND_FACTOR = float(new_settings["WIND_FACTOR"])
-                        SNOWFLAKE_SIZE_MIN = int(new_settings["SNOWFLAKE_SIZE_MIN"])
-                        SNOWFLAKE_SIZE_MAX = int(new_settings["SNOWFLAKE_SIZE_MAX"])
-                        GROUND_HEIGHT = int(new_settings["GROUND_HEIGHT"])
-                        
-                        # Update existing snowflakes to use new settings
-                        for flake in snowflakes:
-                            flake.reset()
-                        
-                        # Adjust snowflake count if needed
-                        current_count = len(snowflakes)
-                        if current_count < SNOWFLAKE_COUNT:
-                            # Add more snowflakes if needed
-                            for _ in range(SNOWFLAKE_COUNT - current_count):
-                                snowflakes.append(Snowflake())
-                        elif current_count > SNOWFLAKE_COUNT:
-                            # Remove excess snowflakes if needed
-                            snowflakes[:] = snowflakes[:SNOWFLAKE_COUNT]
-                        # Recreate snow accumulation array with new ground height
-                        accumulated_snow = [[0 for _ in range(SCREEN_WIDTH)] for _ in range(GROUND_HEIGHT)]
-                        accumulated_snow = [[0 for _ in range(SCREEN_WIDTH)] for _ in range(GROUND_HEIGHT)]
+                settings_dialog.handle_click(event.pos)
+                # Note: We don't need to manually apply settings here anymore
+                # as it's handled by the apply_settings method when the Apply button is clicked
     
     # Fill the screen with dark blue
     screen.fill(DARK_BLUE)

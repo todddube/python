@@ -13,39 +13,6 @@ import time as py_time  # Import time with alias to avoid conflict
 __version__ = "0.1"
 __author__ = "Todd Dube"
 
-def open_ollama_logs_terminal():
-    """Open a terminal window and tail Ollama logs."""
-    try:
-        # Create a logs directory if it doesn't exist
-        logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-        os.makedirs(logs_dir, exist_ok=True)
-        log_file = os.path.join(logs_dir, "ollama_logs.txt")
-        
-        # Create a batch file to run the continuous log fetching
-        batch_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tail_ollama_logs.bat")
-        with open(batch_file, "w") as f:
-            f.write('@echo off\n')
-            f.write(f'title Ollama Logs - {time()}\n')
-            f.write('echo Tailing Ollama API logs...\n')
-            f.write('echo Press Ctrl+C to stop\n')
-            f.write('echo.\n')
-            # Command to continuously poll the Ollama API and append to log file
-            f.write(f':loop\n')
-            f.write(f'powershell -command "try {{ Invoke-RestMethod -Uri http://localhost:11434/api/version }} catch {{ \\"Ollama API Error: $_\\" }}" >> "{log_file}"\n')
-            f.write(f'powershell -command "try {{ Invoke-RestMethod -Uri http://localhost:11434/api/tags }} catch {{ \\"Ollama Tags Error: $_\\" }}" >> "{log_file}"\n')
-            f.write(f'type "{log_file}"\n')
-            f.write('timeout /t 5 /nobreak > nul\n')
-            f.write('cls\n')
-            f.write('goto loop\n')
-        
-        # Open the batch file in a new command prompt window
-        subprocess.Popen(f'start cmd.exe /k "{batch_file}"', shell=True)
-        print(f"Ollama logs terminal opened. Logs saved to: {log_file}")
-        return True
-    except Exception as e:
-        print(f"Error opening Ollama logs terminal: {str(e)}")
-        return False
-
 class CarmaxSearchAgent:
     def __init__(self, max_price=None, min_price=None):
         self.base_url = "https://www.carmax.com/cars"
@@ -527,6 +494,5 @@ def main():
 # 
 if __name__ == "__main__":
     init_streamlit()  # Must be the first Streamlit command
-    open_ollama_logs_terminal()  # Open Ollama logs terminal on startup
     threading.Timer(2.0, open_chromium).start()
     main()

@@ -1,0 +1,6 @@
+cuda-bindings==12.9.0
+cuda-python==12.9.0
+llvmlite==0.44.0
+numba==0.61.2
+numpy==2.2.6
+pywin32==310
