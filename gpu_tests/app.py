@@ -53,10 +53,11 @@ def gpu_info():
         return {
             "Name": device.name.decode(),
             "Max Threads Per Block": device.MAX_THREADS_PER_BLOCK,
-            "Max Block Dimensions": device.MAX_BLOCK_DIM_X,
-            "Max Grid Dimensions": device.MAX_GRID_DIM_X,
+            "Max Block Dimensions": f"{device.MAX_BLOCK_DIM_X}×{device.MAX_BLOCK_DIM_Y}×{device.MAX_BLOCK_DIM_Z}",
+            "Max Grid Dimensions": f"{device.MAX_GRID_DIM_X}×{device.MAX_GRID_DIM_Y}×{device.MAX_GRID_DIM_Z}",
             "Free Memory (GB)": mem_free / (1024**3),
-            "Total Memory (GB)": mem_total / (1024**3)
+            "Total Memory (GB)": mem_total / (1024**3),
+            "Compute Capability": f"{device.compute_capability[0]}.{device.compute_capability[1]}"
         }
     except cuda.CudaSupportError:
         return None
@@ -70,11 +71,20 @@ def run_tests(test_type, sizes, warmup_runs, test_runs, use_max_memory=False, me
     total_steps = len(sizes) * (warmup_runs + test_runs)
     step = 0
     
-    # Configure memory pool if requested
+    # Reserve GPU memory if requested
+    dummy_array = None
     if use_max_memory:
-        ctx = cuda.current_context()
-        total_mem = ctx.get_memory_info()[1]
-        memory_pool = cuda.pinned.allocate(int(total_mem * memory_fraction / 100))
+        try:
+            ctx = cuda.current_context()
+            total_mem = ctx.get_memory_info()[1]
+            memory_size = int(total_mem * memory_fraction / 100)
+            st.info(f"Reserving {memory_size / (1024**3):.2f} GB of GPU memory")
+            # Create a dummy array to reserve memory
+            dummy_array = np.ones(memory_size // 8, dtype=np.float64)
+            # Transfer to GPU to actually reserve the memory
+            d_dummy = cuda.to_device(dummy_array)
+        except Exception as e:
+            st.warning(f"Failed to reserve memory: {str(e)}")
     
     try:
         for i, size in enumerate(sizes):
@@ -86,8 +96,11 @@ def run_tests(test_type, sizes, warmup_runs, test_runs, use_max_memory=False, me
             # Warmup runs
             if warmup_runs > 0:
                 for _ in range(warmup_runs):
-                    # Reset memory manager before each test
-                    cuda.current_context().memory_manager.reset()
+                    # Clear GPU cache before each test
+                    try:
+                        cuda.current_context().deallocations.clear()
+                    except:
+                        pass
                     
                     if test_type == "Vector Operations":
                         _, _ = benchmark_complex_vector_ops(size)
@@ -107,8 +120,11 @@ def run_tests(test_type, sizes, warmup_runs, test_runs, use_max_memory=False, me
             peak_mem_size = []
             
             for _ in range(test_runs):
-                # Reset memory manager before each test
-                cuda.current_context().memory_manager.reset()
+                # Clear GPU cache before each test
+                try:
+                    cuda.current_context().deallocations.clear()
+                except:
+                    pass
                 
                 # Run the test
                 if test_type == "Vector Operations":
@@ -134,7 +150,7 @@ def run_tests(test_type, sizes, warmup_runs, test_runs, use_max_memory=False, me
             # Average results for this size
             cpu_time_avg = np.mean(cpu_times_size)
             gpu_time_avg = np.mean(gpu_times_size)
-            peak_mem_avg = np.mean(peak_mem_size)
+            peak_mem_avg = np.max(peak_mem_size)  # Use maximum peak memory
             
             cpu_times.append(cpu_time_avg)
             gpu_times.append(gpu_time_avg)
@@ -147,10 +163,19 @@ def run_tests(test_type, sizes, warmup_runs, test_runs, use_max_memory=False, me
                 st.write(f"Peak Memory: {peak_mem_avg:.2f} GB")
     
     finally:
-        # Clean up memory
-        cuda.current_context().memory_manager.reset()
-        if use_max_memory and 'memory_pool' in locals():
-            del memory_pool
+        # Clean up dummy array reference
+        if dummy_array is not None:
+            del dummy_array
+        
+        # Force garbage collection to release GPU memory
+        import gc
+        gc.collect()
+        
+        # Clear CUDA cache
+        try:
+            cuda.current_context().deallocations.clear()
+        except:
+            pass
     
     return cpu_times, gpu_times, peak_memory
 
@@ -185,94 +210,142 @@ def plot_results(sizes, cpu_times, gpu_times, peak_memory, operation):
 
 def main():
     st.title("🚀 GPU Performance Testing Dashboard")
-    
-    # GPU Information
-    st.header("📊 GPU Information")
+      # GPU Information
+    st.header("🎯 GPU Specifications")
     gpu_data = gpu_info()
     if not gpu_data:
         st.error("No CUDA-capable GPU detected!")
         return
-        
-    for key, value in gpu_data.items():
-        st.metric(key, f"{value:.2f}" if isinstance(value, float) else str(value))
     
-    # Test Configuration
-    st.header("⚙️ Test Configuration")
-    
-    col1, col2 = st.columns(2)
+    # Create three columns for GPU specs
+    col1, col2, col3 = st.columns(3)
     with col1:
+        st.info("💻 Hardware Info")
+        st.markdown(f"""
+        **GPU Name**  
+        {gpu_data['Name']}
+        
+        **Compute Capability**  
+        CUDA {gpu_data['Compute Capability']}
+        
+        **Memory**  
+        Free: {gpu_data['Free Memory (GB)']:.2f} GB  
+        Total: {gpu_data['Total Memory (GB)']:.2f} GB
+        """)
+    
+    with col2:
+        st.info("🧮 Compute Specs")
+        st.markdown(f"""
+        **Threads Per Block**  
+        {gpu_data['Max Threads Per Block']}
+        
+        **Block Dimensions**  
+        {gpu_data['Max Block Dimensions']}
+        """)
+    
+    with col3:
+        st.info("🌐 Grid Info")
+        st.markdown(f"""
+        **Grid Dimensions**  
+        {gpu_data['Max Grid Dimensions']}
+        
+        **Memory Usage**  
+        {(gpu_data['Total Memory (GB)'] - gpu_data['Free Memory (GB)']):.2f} GB Used  
+        {(gpu_data['Free Memory (GB)'] / gpu_data['Total Memory (GB)'] * 100):.1f}% Free
+        """)
+    
+    # Add memory usage progress bar
+    memory_usage = (gpu_data['Total Memory (GB)'] - gpu_data['Free Memory (GB)']) / gpu_data['Total Memory (GB)']
+    st.progress(memory_usage, text="Memory Usage")
+      # Move configurations to sidebar
+    with st.sidebar:
+        st.header("⚙️ Test Configuration")
+        
+        # Test Type Selection
         test_type = st.selectbox(
             "Select Test Type",
             list(TEST_TYPES.keys())
         )
         st.info(TEST_TYPES[test_type])
         
-    with col2:
+        # Test Profile Selection
+        st.subheader("Test Profile")
         test_profile = st.selectbox(
-            "Test Profile",
+            "Select Profile",
             list(TEST_CONFIGS.keys())
         )
-        st.info(f"Warmup: {TEST_CONFIGS[test_profile]['warmup_runs']} runs\n"
-                f"Test: {TEST_CONFIGS[test_profile]['test_runs']} runs\n"
-                f"Max size: 2^{TEST_CONFIGS[test_profile]['max_size_power']}")
-    
-    # Advanced settings
-    with st.expander("🔧 Advanced Settings"):
-        col3, col4 = st.columns(2)
-        with col3:
-            custom_warmup = st.number_input(
-                "Custom Warmup Runs",
-                min_value=0,
-                max_value=10,
-                value=TEST_CONFIGS[test_profile]["warmup_runs"]
-            )
-            custom_runs = st.number_input(
-                "Custom Test Runs",
-                min_value=1,
-                max_value=20,
-                value=TEST_CONFIGS[test_profile]["test_runs"]
-            )
-        with col4:
-            use_max_memory = st.checkbox("Use Maximum Available Memory", value=False)
-            if use_max_memory:
-                memory_fraction = st.slider("Memory Usage (%)", 
-                                         min_value=10, 
-                                         max_value=90, 
-                                         value=50)
-    
-    # Size range configuration
-    min_size_power = 8  # Minimum size to avoid under-utilization
-    max_size_power = min(
-        TEST_CONFIGS[test_profile]["max_size_power"],
-        14 if use_max_memory else 12
-    )
-    
-    if test_type == "Vector Operations":
-        size_range = st.slider(
-            "Vector Size Range (power of 2)",
-            min_value=min_size_power,
-            max_value=max_size_power,
-            value=(min_size_power, max_size_power-2),
-            step=1
+        st.info(f"📊 Profile Settings:\n"
+                f"• Warmup runs: {TEST_CONFIGS[test_profile]['warmup_runs']}\n"
+                f"• Test runs: {TEST_CONFIGS[test_profile]['test_runs']}\n"
+                f"• Max size: 2^{TEST_CONFIGS[test_profile]['max_size_power']}")
+        
+        # Advanced Settings in Sidebar
+        st.subheader("🔧 Advanced Settings")
+        custom_warmup = st.number_input(
+            "Warmup Runs",
+            min_value=0,
+            max_value=10,
+            value=TEST_CONFIGS[test_profile]["warmup_runs"],
+            help="Number of warmup runs before actual testing"
         )
-        sizes = [2**n for n in range(size_range[0], size_range[1] + 1)]
-    else:
+        
+        custom_runs = st.number_input(
+            "Test Runs",
+            min_value=1,
+            max_value=20,
+            value=TEST_CONFIGS[test_profile]["test_runs"],
+            help="Number of test iterations for averaging"
+        )
+        
+        use_max_memory = st.checkbox(
+            "Maximum Memory Usage", 
+            value=False,
+            help="Enable to use maximum available GPU memory"
+        )
+        
+        if use_max_memory:
+            memory_fraction = st.slider(
+                "Memory Usage (%)", 
+                min_value=10, 
+                max_value=90, 
+                value=50,
+                help="Percentage of total GPU memory to use"
+            )
+          # Size Configuration in Sidebar
+        st.subheader("📏 Size Configuration")
+        min_size_power = 8  # Minimum size to avoid under-utilization
+        max_size_power = min(
+            TEST_CONFIGS[test_profile]["max_size_power"],
+            14 if use_max_memory else 12
+        )
+        
         size_range = st.slider(
-            "Matrix Size Range (power of 2)",
+            "Size Range (power of 2)" if test_type == "Vector Operations"
+            else "Matrix Size Range (power of 2)",
             min_value=min_size_power,
             max_value=max_size_power,
             value=(min_size_power, max_size_power-2),
-            step=1
+            step=1,
+            help="Select the range of sizes to test (powers of 2)"
         )
         sizes = [2**n for n in range(size_range[0], size_range[1] + 1)]
         
-    # Show estimated memory usage
-    max_size = max(sizes)
-    if test_type == "Matrix Multiplication":
-        mem_needed = (3 * max_size * max_size * 4) / (1024**3)  # 3 matrices, 4 bytes per float32
-    else:
-        mem_needed = (4 * max_size * 4) / (1024**3)  # 4 vectors, 4 bytes per float32
-    st.warning(f"Estimated peak memory usage: {mem_needed:.2f} GB")
+        # Show size examples
+        st.caption("Test sizes:")
+        size_examples = [f"• 2^{n} = {2**n:,}" for n in range(size_range[0], size_range[1] + 1)]
+        st.text("\n".join(size_examples))
+        
+        # Memory Usage Estimate
+        st.subheader("💾 Memory Estimate")
+        max_size = max(sizes)
+        if test_type == "Matrix Multiplication":
+            mem_needed = (3 * max_size * max_size * 4) / (1024**3)  # 3 matrices, float32
+            st.warning(f"Peak memory: {mem_needed:.2f} GB\n"
+                      f"Matrix size: {max_size}×{max_size}")
+        else:
+            mem_needed = (4 * max_size * 4) / (1024**3)  # 4 vectors, float32
+            st.warning(f"Peak memory: {mem_needed:.2f} GB\n"
+                      f"Vector size: {max_size:,}")
     
     # Run Tests
     if st.button("Run Performance Tests"):

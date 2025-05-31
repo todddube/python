@@ -8,10 +8,46 @@ import streamlit as st
 import requests
 import pyhocon
 import time as py_time  # Import time with alias to avoid conflict
+import concurrent.futures
+from functools import partial
+import sys
+from collections import deque
+from typing import List, Dict, Any, Optional
 
 # Add version constants at top of file
-__version__ = "0.1"
+__version__ = "0.2"
 __author__ = "Todd Dube"
+
+# Initialize performance metrics in session state
+if 'performance_metrics' not in st.session_state:
+    st.session_state.performance_metrics = {
+        'last_inference_time': 0,
+        'average_inference_time': 0,
+        'tokens_per_second': 0,
+        'total_tokens': 0,
+        'model': "llama3"
+    }
+
+# Add path for utils module
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+try:
+    from utils.performance import measure_resource_usage, process_in_parallel, get_performance_history, performance_decorator
+except ImportError:
+    # If import fails, create a simplified version of needed functions
+    def measure_resource_usage():
+        return {'cpu_percent': 0, 'gpu_percent': 0, 'ram_percent': 0}
+    
+    def process_in_parallel(tasks, process_func, max_workers=None):
+        results = []
+        for task in tasks:
+            results.append(process_func(**task))
+        return results
+    
+    def get_performance_history():
+        return {'gpu_util': [], 'cpu_util': [], 'ram_util': [], 'inference_times': []}
+    
+    def performance_decorator(func):
+        return func
 
 class CarmaxSearchAgent:
     def __init__(self, max_price=None, min_price=None):
@@ -60,7 +96,21 @@ def open_chromium():
         # Fallback to default browser
         webbrowser.open(url)
 
-def get_ollama_response(prompt, model="llama3"):
+def get_ollama_response(prompt, model="llama3", num_ctx=4096, num_gpu=100, num_thread=0, mirostat=0):
+    """
+    Get response from Ollama API with optimized parameters for local GPU/CPU usage
+    
+    Args:
+        prompt: The text prompt to send to the model
+        model: The Ollama model to use (default: llama3)
+        num_ctx: Context window size (default: 4096)
+        num_gpu: Percentage of layers to offload to GPU (0-100) (default: 100 for full GPU utilization)
+        num_thread: Number of threads to use (0 means auto) (default: 0)
+        mirostat: Mirostat sampling algorithm (0 = off, 1 = v1, 2 = v2) (default: 0)
+    
+    Returns:
+        The generated text response
+    """
     start_time = time()
     try:
         response = requests.post('http://localhost:11434/api/generate',
@@ -69,15 +119,30 @@ def get_ollama_response(prompt, model="llama3"):
                                    "prompt": prompt,
                                    "system": "",
                                    "stream": False,
-                                   "temperature": 0.7
+                                   "temperature": 0.7,
+                                   "options": {
+                                       "num_ctx": num_ctx,           # Larger context window
+                                       "num_gpu": num_gpu,           # Percentage of layers to run on GPU
+                                       "num_thread": num_thread,     # Auto-detect optimal thread count (0 = auto)
+                                       "mirostat": mirostat,         # Advanced sampling algorithm
+                                       "repeat_penalty": 1.1,        # Penalize repetition for better text generation
+                                       "num_predict": 512,           # Increase tokens to generate
+                                       "seed": -1                    # Random seed for reproducibility (-1 = random seed)
+                                   }
                                })
         response.raise_for_status()  # Raise an HTTPError for bad responses (4xx and 5xx)
         json_response = response.json()
         
-        # Update sidebar with query info
-        # with st.sidebar.expander("🔄 Recent Activity", expanded=True):
-        #     st.write(f"Query sent: {prompt[:50]}...")
-        #     st.write(f"Response time: {time() - start_time:.2f} seconds")
+        # Calculate and store performance metrics
+        inference_time = time() - start_time
+        if 'eval_count' in json_response:
+            tokens_generated = json_response.get('eval_count', 0)
+            tokens_per_second = tokens_generated / inference_time if inference_time > 0 else 0
+            st.session_state.performance_metrics = {
+                'last_inference_time': inference_time,
+                'tokens_per_second': tokens_per_second,
+                'model': model
+            }
             
         if 'response' in json_response:
             return json_response['response']
@@ -160,7 +225,15 @@ class Agent:
         self.personality = personality
         self.kind = kind
         self.avatar = avatar or self.DEFAULT_AVATAR
-        self.conversation_history = []        
+        self.conversation_history = []
+        # Set default model parameters for this agent
+        self.model_params = {
+            "model": "llama3",   # Default model
+            "num_ctx": 4096,     # Context window size
+            "num_gpu": 100,      # Use 100% of GPU by default
+            "num_thread": 0,     # Auto-detect optimal thread count
+            "mirostat": 0        # Advanced sampling algorithm (0 = disabled)
+        }
 
     def __getattr__(self, name):
         # Handle missing attributes gracefully
@@ -168,16 +241,61 @@ class Agent:
             return self.__dict__[name]
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
     
+    @performance_decorator
     def respond(self, message):
+        """Generate response using the Ollama API with optimized parameters"""
         context = f"""
         You are {self.name}. {self.personality}
         Previous conversation: {self.conversation_history}
         Respond to: {message}
         Keep response brief and in character.
         """
-        response = get_ollama_response(context)
+        response = get_ollama_response(
+            prompt=context,
+            model=self.model_params["model"],
+            num_ctx=self.model_params["num_ctx"],
+            num_gpu=self.model_params["num_gpu"],
+            num_thread=self.model_params["num_thread"],
+            mirostat=self.model_params["mirostat"]
+        )
         self.conversation_history.append(f"{self.name}: {response}")
         return response
+        
+    @staticmethod
+    def respond_parallel(agents, message):
+        """Process agent responses in parallel to maximize efficiency"""
+        tasks = []
+        for agent in agents:
+            tasks.append({
+                "agent": agent,
+                "message": message
+            })
+            
+        def _process_agent_response(agent, message):
+            response = agent.respond(message)
+            return (agent, response)
+        
+        # Determine optimal worker count based on available CPU cores
+        optimal_workers = min(len(agents), os.cpu_count() or 2)
+        
+        # Process responses in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=optimal_workers) as executor:
+            futures = []
+            for task in tasks:
+                futures.append(
+                    executor.submit(_process_agent_response, task["agent"], task["message"])
+                )
+            
+            # Collect results as they complete
+            results = []
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    agent, response = future.result()
+                    results.append((agent, response))
+                except Exception as e:
+                    st.error(f"Error in parallel agent response: {str(e)}")
+            
+        return results
 
     def get_config():
         """Load and return configuration from HOCON file."""
@@ -338,45 +456,93 @@ def update_sidebar_animation(container, speakers, messages):
     container.markdown(html_content, unsafe_allow_html=True)
 
 def ollama_check():
-    """Check if the Ollama service is running."""
+    """Check if the Ollama service is running and show optimization status."""
     
     # Add status check for Ollama service
     try:
         response = requests.get('http://localhost:11434/api/version')
         if response.status_code == 200:
-            st.sidebar.markdown("""
+            version_data = response.json()
+            version = version_data.get('version', 'unknown')
+            
+            st.sidebar.markdown(f"""
                 <style>
-                @keyframes flashingColors {
-                    0% { color: #FF0000; }
-                    25% { color: #00FF00; }
-                    50% { color: #0000FF; }
-                    75% { color: #FFFF00; }
-                    100% { color: #FF0000; }
-                }
-                .flashing-text {
+                @keyframes flashingColors {{
+                    0% {{ color: #FF0000; }}
+                    25% {{ color: #00FF00; }}
+                    50% {{ color: #0000FF; }}
+                    75% {{ color: #FFFF00; }}
+                    100% {{ color: #FF0000; }}
+                }}
+                .flashing-text {{
                     animation: flashingColors 2s infinite;
                     font-weight: bold;
-                }
+                }}
                 </style>
-                <span class="flashing-text">🟢 Ollama service is running</span>
+                <span class="flashing-text">🟢 Ollama service is running</span> (v{version})
             """, unsafe_allow_html=True)
+            
+            # Try to determine if CUDA is available
+            has_gpu = False
+            try:
+                import GPUtil
+                gpus = GPUtil.getGPUs()
+                if gpus:
+                    gpu_info = gpus[0]
+                    has_gpu = True
+                    st.sidebar.markdown(f"🖥️ **GPU: {gpu_info.name}**")
+                    st.sidebar.progress(gpu_info.load, f"GPU Load: {gpu_info.load*100:.1f}%")
+            except:
+                pass
+                
+            if has_gpu:
+                st.sidebar.success("✅ GPU acceleration available")
+            else:
+                st.sidebar.warning("⚠️ No GPU detected, using CPU only")
+                
         else:
             st.sidebar.error("🔴 Ollama service is not responding properly")
             st.error("Ollama service is not responding properly. Please check if it's running correctly.")
-            
     except requests.exceptions.RequestException:
         st.sidebar.error("🔴 Ollama service is not running")
+        st.error("Ollama service is not running. Please start Ollama first.")
 
-    # Check model availability
-    try:
-        response = requests.get('http://localhost:11434/api/tags')
-        if response.status_code == 200:
-            models = response.json()
-            st.sidebar.write("Available Models:")
-            for model in models['models']:
-                st.sidebar.write(f"- {model['name']}")
-    except requests.exceptions.RequestException:
-        st.sidebar.warning("⚠️ Cannot fetch available models")
+    # Check model availability with expanded details
+    with st.sidebar.expander("🤖 Available Models"):
+        try:
+            response = requests.get('http://localhost:11434/api/tags')
+            if response.status_code == 200:
+                models = response.json()
+                if 'models' in models and models['models']:
+                    for model in models['models']:
+                        model_name = model.get('name', 'unknown')
+                        model_size = model.get('size', 0) / (1024 * 1024 * 1024)  # Convert to GB
+                        st.write(f"- **{model_name}** ({model_size:.1f}GB)")
+                else:
+                    st.write("No models found. Try pulling a model with:")
+                    st.code("ollama pull llama3", language="bash")
+        except requests.exceptions.RequestException:
+            st.warning("⚠️ Cannot fetch available models")
+            
+    # Show optimization recommendations
+    with st.sidebar.expander("🚀 Optimization Tips"):
+        st.markdown("""
+        **For best performance:**
+        - Use smaller models if latency is important
+        - Increase GPU utilization to 100% if dedicated GPU available
+        - For multi-agent conversations, use parallel processing
+        - Monitor GPU/CPU usage to find optimal settings
+        """)
+        
+    # Add resource monitoring in sidebar
+    metrics = measure_resource_usage()
+    with st.sidebar.expander("📊 System Resources", expanded=False):
+        cpu_col, gpu_col = st.columns(2)
+        with cpu_col:
+            st.metric("CPU Usage", f"{metrics['cpu_percent']:.1f}%")
+        with gpu_col:
+            st.metric("GPU Usage", f"{metrics['gpu_percent']:.1f}%")
+        st.progress(metrics['ram_percent']/100, f"RAM: {metrics['ram_percent']:.1f}%")
 
 
 def main():
@@ -452,7 +618,37 @@ def main():
         
         # Create animated conversation display in the sidebar
         chat_container = create_sidebar_conversation_animation()
+          # Add a selection box for Ollama model
+        available_models = ["llama3", "llama3:8b", "mistral", "codellama", "phi3"]  # Default models
+        # Try to get real model list
+        try:
+            response = requests.get('http://localhost:11434/api/tags')
+            if response.status_code == 200:
+                models_data = response.json()
+                available_models = [model['name'] for model in models_data.get('models', [])]
+        except:
+            pass  # Use default model list on failure
+            
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_model = st.selectbox("Select Ollama model:", available_models, index=0)
+        with col2:
+            # GPU utilization slider (0 = CPU only, 100 = full GPU)
+            gpu_utilization = st.slider("GPU utilization %:", 0, 100, 100, 5)
         
+        # Add advanced options in expander
+        with st.expander("Advanced Performance Options", expanded=False):
+            context_size = st.slider("Context size:", 1024, 8192, 4096, 512)
+            thread_count = st.slider("CPU Thread count (0=auto):", 0, 16, 0, 1)
+            batch_size = st.slider("Batch size:", 1, 512, 32, 8)
+        
+        # Update all agents with selected model
+        for agent in agents:
+            agent.model_params["model"] = selected_model
+            agent.model_params["num_gpu"] = gpu_utilization
+            agent.model_params["num_ctx"] = context_size
+            agent.model_params["num_thread"] = thread_count
+            
         if st.button("Start Conversation"):
             # Create vehicle agent first, before starting conversation
             vehicle_agent = VehicleAgent()
@@ -462,13 +658,27 @@ def main():
             
             # Create placeholder for conversation
             conversation_placeholder = st.empty()
-         
+            
+            # Create performance monitoring container
+            perf_container = st.empty()
+            
             # Iterate the specified number of times
-            for _ in range(num_iterations):
-                for agent in agents:
-                    with st.spinner(f"Waiting for {agent.name}'s response..."):
-                        response = agent.respond(topic)
+            for iteration in range(num_iterations):
+                # Process all agents in parallel for better performance
+                with st.spinner(f"Processing responses for round {iteration+1}/{num_iterations}..."):
+                    # Get current resource usage before processing
+                    before_metrics = measure_resource_usage()
+                    
+                    # Process agents in parallel
+                    responses = Agent.respond_parallel(agents, topic)
+                    
+                    # Get resource usage after processing
+                    after_metrics = measure_resource_usage()
+                    
+                    # Add responses to conversation
+                    for agent, response in responses:
                         st.session_state.conversation.append((f"{agent.avatar} {agent.name}", response))
+                        
                     # Update display
                     with conversation_placeholder.container():
                         for speaker, msg in st.session_state.conversation:
@@ -480,6 +690,24 @@ def main():
                     speakers = [speaker for speaker, _ in st.session_state.conversation]
                     messages = [msg for _, msg in st.session_state.conversation]
                     update_sidebar_animation(chat_container, speakers, messages)
+                    
+                    # Update performance metrics
+                    perf_history = get_performance_history()
+                    perf_metrics = st.session_state.performance_metrics
+                    
+                    # Display performance metrics
+                    with perf_container.container():
+                        perf_col1, perf_col2, perf_col3 = st.columns(3)
+                        with perf_col1:
+                            st.metric("GPU Usage", f"{after_metrics['gpu_percent']:.1f}%", 
+                                      f"{after_metrics['gpu_percent'] - before_metrics['gpu_percent']:.1f}%")
+                        with perf_col2:
+                            st.metric("CPU Usage", f"{after_metrics['cpu_percent']:.1f}%",
+                                      f"{after_metrics['cpu_percent'] - before_metrics['cpu_percent']:.1f}%")
+                        with perf_col3:
+                            if perf_metrics['last_inference_time'] > 0:
+                                st.metric("Tokens/sec", f"{perf_metrics['tokens_per_second']:.1f}",
+                                         f"{perf_metrics['model']}")
                             
             # Now analyze conversation using the existing vehicle_agent
             vehicle_mentions = vehicle_agent.analyze_conversation(st.session_state.conversation)
