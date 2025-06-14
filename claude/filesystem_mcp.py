@@ -1,98 +1,251 @@
 #!/usr/bin/env python3
 """
-Filesystem MCP Server for Claude Desktop
+Enhanced Filesystem MCP Server for Claude Desktop
 
-A comprehensive filesystem Model Context Protocol server that provides safe access to local 
-file systems with configurable exclusions and robust error handling.
+A high-performance, cross-platform filesystem Model Context Protocol server 
+with advanced features and optimizations.
 
 Features:
-- Browse C: and D: drives safely
-- Configurable exclusions for system/sensitive directories
-- Read, search, and list operations
-- Proper MCP protocol implementation
-- Security controls and path validation
+- Cross-platform support (Windows, macOS, Linux)
+- Optimized file operations with caching
+- Advanced search with regex and content matching
+- Parallel operations for better performance
+- Enhanced security and path validation
+- Comprehensive logging and error handling
+- Smart exclusions based on OS
 """
 
 import json
 import os
 import sys
+import platform
+import threading
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Set
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio
 import logging
-from datetime import datetime
 import fnmatch
 import stat
+import re
+import mimetypes
+import hashlib
+from functools import lru_cache
 
-# Configure logging
+# Enhanced logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('filesystem_mcp.log'),
-        logging.StreamHandler()
+        logging.StreamHandler(sys.stderr)
     ]
 )
 logger = logging.getLogger(__name__)
 
+class OSDetector:
+    """Cross-platform OS detection and configuration."""
+    
+    @staticmethod
+    def get_os_info() -> Dict[str, Any]:
+        """Get comprehensive OS information."""
+        return {
+            'system': platform.system(),
+            'release': platform.release(),
+            'version': platform.version(),
+            'machine': platform.machine(),
+            'processor': platform.processor(),
+            'architecture': platform.architecture(),
+            'python_version': platform.python_version()
+        }
+    
+    @staticmethod
+    def get_default_drives() -> List[str]:
+        """Get default drives/mount points based on OS."""
+        system = platform.system()
+        if system == "Windows":
+            drives = []
+            for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+                drive = f"{letter}:"
+                if os.path.exists(f"{drive}\\"):
+                    drives.append(drive)
+            return drives or ['C:', 'D:']  # Fallback
+        elif system == "Darwin":  # macOS
+            return ["/", "/Users", "/Applications", "/Volumes"]
+        else:  # Linux and others
+            return ["/", "/home", "/mnt", "/media"]
+    
+    @staticmethod
+    def get_default_exclusions() -> List[str]:
+        """Get OS-specific default exclusions."""
+        system = platform.system()
+        
+        base_exclusions = [
+            "*/.*",  # Hidden files/folders
+            "*/__pycache__/*",
+            "*/node_modules/*", 
+            "*/.git/*",
+            "*/.svn/*",
+            "*/temp/*",
+            "*/tmp/*",
+            "*/cache/*",
+            "*/Cache/*"
+        ]
+        
+        if system == "Windows":
+            windows_exclusions = [
+                "C:\\Windows\\*",
+                "C:\\Program Files\\*",
+                "C:\\Program Files (x86)\\*",
+                "C:\\ProgramData\\*",
+                "C:\\System Volume Information\\*",
+                "C:\\$Recycle.Bin\\*",
+                "C:\\Recovery\\*",
+                "*\\AppData\\Local\\Temp\\*",
+                "*\\Microsoft\\*",
+                "*\\Intel\\*",
+                "*\\NVIDIA\\*"
+            ]
+            return base_exclusions + windows_exclusions
+        elif system == "Darwin":  # macOS
+            macos_exclusions = [
+                "/System/*",
+                "/Library/Application Support/*",
+                "/private/*",
+                "/usr/bin/*",
+                "/usr/sbin/*",
+                "/Applications/*.app/Contents/*",
+                "*/Library/Caches/*",
+                "*/Library/Logs/*",
+                "*/.Trash/*",
+                "/cores/*"
+            ]
+            return base_exclusions + macos_exclusions
+        else:  # Linux
+            linux_exclusions = [
+                "/proc/*",
+                "/sys/*",
+                "/dev/*",
+                "/boot/*",
+                "/usr/bin/*",
+                "/usr/sbin/*",
+                "/var/log/*",
+                "/var/cache/*"
+            ]
+            return base_exclusions + linux_exclusions
+
+class PerformanceCache:
+    """Simple LRU cache for performance optimization."""
+    
+    def __init__(self, max_size: int = 1000, ttl_seconds: int = 300):
+        self.cache = {}
+        self.access_times = {}
+        self.max_size = max_size
+        self.ttl = ttl_seconds
+        self._lock = threading.RLock()
+    
+    def get(self, key: str) -> Optional[Any]:
+        with self._lock:
+            if key in self.cache:
+                # Check TTL
+                if time.time() - self.access_times[key] < self.ttl:
+                    self.access_times[key] = time.time()
+                    return self.cache[key]
+                else:
+                    # Expired
+                    del self.cache[key]
+                    del self.access_times[key]
+            return None
+    
+    def set(self, key: str, value: Any):
+        with self._lock:
+            # Clean up if at max size
+            if len(self.cache) >= self.max_size:
+                oldest_key = min(self.access_times.keys(), key=lambda k: self.access_times[k])
+                del self.cache[oldest_key]
+                del self.access_times[oldest_key]
+            
+            self.cache[key] = value
+            self.access_times[key] = time.time()
+    
+    def clear(self):
+        with self._lock:
+            self.cache.clear()
+            self.access_times.clear()
+
 class MCPServer:
-    """Simple MCP Server implementation."""
+    """Enhanced MCP Server implementation with performance optimizations."""
     
     def __init__(self, name: str):
         self.name = name
         self.tools = []
         self.request_id = 0
-      def add_tool(self, tool_def: Dict[str, Any]):
+        self.cache = PerformanceCache()
+        self.executor = ThreadPoolExecutor(max_workers=4)
+    
+    def add_tool(self, tool_def: Dict[str, Any]):
         """Add a tool definition."""
         self.tools.append(tool_def)
     
-    async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    async def handle_request(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Handle incoming MCP requests."""
-        method = request.get("method")
-        params = request.get("params", {})
-        request_id = request.get("id")
-        
-        if method == "initialize":
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": {}
-                    },
-                    "serverInfo": {
-                        "name": self.name,
-                        "version": "1.0.0"
+        try:
+            method = request.get("method")
+            params = request.get("params", {})
+            request_id = request.get("id")
+            
+            print(f"Handling request: {method}", file=sys.stderr)
+            
+            if method == "initialize":
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {
+                            "tools": {}
+                        },
+                        "serverInfo": {
+                            "name": self.name,
+                            "version": "1.0.0"
+                        }
                     }
                 }
-            }
-        elif method == "initialized":
-            # This is a notification, no response needed
-            return None
-        elif method == "tools/list":
+            elif method == "initialized":
+                # This is a notification, no response needed
+                print("Server initialized successfully", file=sys.stderr)
+                return None
+            elif method == "tools/list":
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"tools": self.tools}
+                }
+            elif method == "tools/call":
+                tool_name = params.get("name")
+                arguments = params.get("arguments", {})
+                
+                # Find and call the tool
+                result = await self.call_tool(tool_name, arguments)
+                return {
+                    "jsonrpc": "2.0", 
+                    "id": request_id,
+                    "result": {"content": result}
+                }
+            else:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32601, "message": f"Method not found: {method}"}
+                }
+        except Exception as e:
+            print(f"Error in handle_request: {e}", file=sys.stderr)
             return {
                 "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {"tools": self.tools}
-            }
-        elif method == "tools/call":
-            tool_name = params.get("name")
-            arguments = params.get("arguments", {})
-            
-            # Find and call the tool
-            result = await self.call_tool(tool_name, arguments)
-            return {
-                "jsonrpc": "2.0", 
-                "id": request_id,
-                "result": {"content": result}
-            }
-        else:
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "error": {"code": -32601, "message": f"Method not found: {method}"}
-            }
+                "id": request.get("id"),
+                "error": {"code": -32603, "message": f"Internal error: {str(e)}"}            }
     
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Override this method to handle tool calls."""
@@ -100,69 +253,51 @@ class MCPServer:
     
     async def run_stdio(self):
         """Run the MCP server using stdio transport."""
+        print("MCP Server starting...", file=sys.stderr)
         while True:
             try:
                 line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
                 if not line:
+                    print("No more input, exiting...", file=sys.stderr)
                     break
                 
                 request = json.loads(line.strip())
                 response = await self.handle_request(request)
                 
-                print(json.dumps(response), flush=True)
+                # Only send response if it's not None (some methods like 'initialized' don't need responses)
+                if response is not None:
+                    print(json.dumps(response), flush=True)
                 
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                print(f"JSON decode error: {e}", file=sys.stderr)
                 continue
             except Exception as e:
+                print(f"Error handling request: {e}", file=sys.stderr)
                 logger.error(f"Error handling request: {e}")
                 continue
 
 class FilesystemMCP:
-    """Filesystem MCP Server implementation."""
+    """Enhanced Filesystem MCP Server implementation with cross-platform support."""
     
     def __init__(self, config_dir: str = "config"):
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(exist_ok=True)
+        self.os_detector = OSDetector()
+        self.cache = PerformanceCache()
         
-        # Default exclusions - can be overridden by config
-        self.default_exclusions = [
-            # System directories
-            "C:\\Windows\\*",
-            "C:\\Program Files\\*",
-            "C:\\Program Files (x86)\\*",
-            "C:\\System Volume Information\\*",
-            "C:\\$Recycle.Bin\\*",
-            "C:\\Recovery\\*",
-            "C:\\ProgramData\\Microsoft\\*",
-            "C:\\Users\\*\\AppData\\*",
-            
-            # Sensitive directories
-            "*\\.*",  # Hidden files/folders (starting with .)
-            "*\\System32\\*",
-            "*\\SysWOW64\\*",
-            "*\\Boot\\*",
-            "*\\EFI\\*",
-            
-            # Large/temp directories
-            "*\\Temp\\*",
-            "*\\tmp\\*",
-            "*\\cache\\*",
-            "*\\Cache\\*",
-            
-            # Development exclusions
-            "*\\node_modules\\*",
-            "*\\.git\\*",
-            "*\\__pycache__\\*",
-            "*\\.vscode\\*",
-            "*\\build\\*",
-            "*\\dist\\*",
-        ]
+        # Get OS-specific defaults
+        self.os_info = self.os_detector.get_os_info()
+        self.default_exclusions = self.os_detector.get_default_exclusions()
+        self.allowed_drives = self.os_detector.get_default_drives()
         
-        # Allowed drives
-        self.allowed_drives = ['C:', 'D:']
+        logger.info(f"Detected OS: {self.os_info['system']} {self.os_info['release']}")
+        logger.info(f"Available drives/paths: {self.allowed_drives}")
         
         # Load configuration
         self.load_config()
+        
+        # Initialize thread pool for parallel operations
+        self.executor = ThreadPoolExecutor(max_workers=6)
         
     def load_config(self):
         """Load configuration from config files."""
@@ -239,12 +374,23 @@ class FilesystemMCP:
             logger.error(f"Failed to save settings config: {e}")
     
     def is_path_allowed(self, path: Union[str, Path]) -> bool:
-        """Check if a path is allowed based on exclusion patterns."""
+        """Check if a path is allowed based on exclusion patterns with cross-platform support."""
         path_str = str(Path(path).resolve())
         
-        # Check drive allowlist
-        drive = Path(path_str).anchor
-        if drive.rstrip('\\') not in self.allowed_drives:
+        # Normalize path separators for cross-platform compatibility
+        if platform.system() == "Windows":
+            path_str = path_str.replace('/', '\\')
+        else:
+            path_str = path_str.replace('\\', '/')
+        
+        # Check drive/root allowlist
+        is_allowed = False
+        for allowed_path in self.allowed_drives:
+            if path_str.startswith(allowed_path):
+                is_allowed = True
+                break
+        
+        if not is_allowed:
             return False
         
         # Check exclusion patterns
@@ -254,8 +400,9 @@ class FilesystemMCP:
         
         return True
     
+    @lru_cache(maxsize=1000)
     def safe_path_resolve(self, path: str) -> Optional[Path]:
-        """Safely resolve a path and validate it."""
+        """Safely resolve a path and validate it with caching."""
         try:
             resolved_path = Path(path).resolve()
             if self.is_path_allowed(resolved_path):
@@ -266,10 +413,21 @@ class FilesystemMCP:
             return None
     
     def get_file_info(self, path: Path) -> Dict[str, Any]:
-        """Get comprehensive file/directory information."""
+        """Get comprehensive file/directory information with caching."""
+        cache_key = f"file_info:{str(path)}"
+        cached = self.cache.get(cache_key)
+        if cached:
+            return cached
+        
         try:
             stat_info = path.stat()
-            return {
+            
+            # Get MIME type for files
+            mime_type = None
+            if path.is_file():
+                mime_type, _ = mimetypes.guess_type(str(path))
+            
+            info = {
                 "path": str(path),
                 "name": path.name,
                 "is_file": path.is_file(),
@@ -279,14 +437,77 @@ class FilesystemMCP:
                 "modified": datetime.fromtimestamp(stat_info.st_mtime).isoformat(),
                 "created": datetime.fromtimestamp(stat_info.st_ctime).isoformat(),
                 "extension": path.suffix.lower() if path.is_file() else None,
+                "mime_type": mime_type,
                 "permissions": stat.filemode(stat_info.st_mode),
+                "is_hidden": self._is_hidden(path, stat_info)
             }
+            
+            self.cache.set(cache_key, info)
+            return info
+            
         except Exception as e:
+            logger.error(f"Error getting file info for {path}: {e}")
             return {
                 "path": str(path),
                 "name": path.name,
                 "error": str(e)
             }
+    
+    def _is_hidden(self, path: Path, stat_info) -> bool:
+        """Detect if file/directory is hidden (cross-platform)."""
+        # Unix-style hidden files
+        if path.name.startswith('.'):
+            return True
+        
+        # Windows hidden attribute
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
+                return bool(attrs != -1 and attrs & 2)  # FILE_ATTRIBUTE_HIDDEN
+            except:
+                pass
+        
+        return False
+    
+    def list_directory_parallel(self, path: Path, show_hidden: bool = False, max_items: int = 1000) -> List[Dict[str, Any]]:
+        """List directory contents with parallel processing."""
+        try:
+            items = []
+            count = 0
+            
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = []
+                
+                for item in path.iterdir():
+                    if count >= max_items:
+                        break
+                    
+                    if not show_hidden and self._is_hidden(item, None):
+                        continue
+                    
+                    if not self.is_path_allowed(item):
+                        continue
+                    
+                    future = executor.submit(self.get_file_info, item)
+                    futures.append(future)
+                    count += 1
+                
+                # Collect results
+                for future in as_completed(futures):
+                    try:
+                        result = future.result(timeout=5)
+                        items.append(result)
+                    except Exception as e:
+                        logger.warning(f"Failed to get info for item: {e}")
+            
+            # Sort by name
+            items.sort(key=lambda x: x.get('name', '').lower())
+            return items
+            
+        except Exception as e:
+            logger.error(f"Error listing directory {path}: {e}")
+            return []
     
     @staticmethod
     def format_size(size: int) -> str:
