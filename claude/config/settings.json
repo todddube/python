@@ -1,0 +1,6 @@
+{
+  "description": "Filesystem MCP Server Settings",
+  "allowed_drives": ["C:", "D:"],
+  "max_file_size_mb": 1500,
+  "max_search_results": 1000
+}

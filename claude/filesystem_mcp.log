@@ -1,0 +1,4 @@
+2025-06-14 10:23:18,215 - filesystem_mcp - INFO - Loaded 23 exclusion patterns
+2025-06-14 10:23:18,215 - filesystem_mcp - INFO - Loaded settings: drives=['C:', 'D:']
+2025-06-14 10:23:26,169 - filesystem_mcp - INFO - Loaded 23 exclusion patterns
+2025-06-14 10:23:26,172 - filesystem_mcp - INFO - Loaded settings: drives=['C:', 'D:']

@@ -1,0 +1,34 @@
+{
+  "description": "Filesystem exclusion patterns. Use * for wildcards.",
+  "patterns": [
+    "C:\\Windows\\*",
+    "C:\\Program Files\\*",
+    "C:\\Program Files (x86)\\*",
+    "C:\\System Volume Information\\*",
+    "C:\\$Recycle.Bin\\*",
+    "C:\\Recovery\\*",
+    "C:\\ProgramData\\Microsoft\\*",
+    "C:\\Users\\*\\AppData\\*",
+    "*\\.*",
+    "*\\System32\\*",
+    "*\\SysWOW64\\*",
+    "*\\Boot\\*",
+    "*\\EFI\\*",
+    "*\\Temp\\*",
+    "*\\tmp\\*",
+    "*\\cache\\*",
+    "*\\Cache\\*",
+    "*\\node_modules\\*",
+    "*\\.git\\*",
+    "*\\__pycache__\\*",
+    "*\\.vscode\\*",
+    "*\\build\\*",
+    "*\\dist\\*"
+  ],
+  "examples": [
+    "C:\\Windows\\*",
+    "*\\AppData\\*",
+    "*.tmp",
+    "*\\node_modules\\*"
+  ]
+}
