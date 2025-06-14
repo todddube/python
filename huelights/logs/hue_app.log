@@ -245,3 +245,112 @@
 2025-04-20 16:57:58,496 - __main__ - INFO - Light Living Room Downlight 4 brightness: 0
 2025-04-20 16:57:58,496 - __main__ - INFO - ERROR - Light Living Room Downlight 4 has no brightness attribute
 2025-04-20 16:57:58,497 - __main__ - INFO - ERROR - Light Living Room Downlight 4 has no brightness attribute
+2025-06-07 12:30:13,772 - __main__ - INFO - Hue App started 2025-06-07 12:30:13
+2025-06-07 12:30:14,297 - __main__ - INFO - Auto-refresh update at 12:30:14
+2025-06-07 12:30:14,313 - __main__ - INFO - Hue App started 2025-06-07 12:30:14
+2025-06-07 12:30:14,818 - __main__ - WARNING - Light Table Lamp has no brightness attribute
+2025-06-07 12:30:14,820 - __main__ - WARNING - Light Reading Lamp has no brightness attribute
+2025-06-07 12:30:14,822 - __main__ - WARNING - Light Tall Lamp has no brightness attribute
+2025-06-07 12:30:14,825 - __main__ - WARNING - Light Kitchen Sink has no brightness attribute
+2025-06-07 12:30:14,828 - __main__ - WARNING - Light Front Room Lamp 2 has no brightness attribute
+2025-06-07 12:30:14,830 - __main__ - WARNING - Light Front Room Lamp 1 has no brightness attribute
+2025-06-07 12:30:14,834 - __main__ - WARNING - Light Bedroom Lamp 2 has no brightness attribute
+2025-06-07 12:30:14,836 - __main__ - WARNING - Light Bedroom Lamp 1 has no brightness attribute
+2025-06-07 12:30:14,838 - __main__ - WARNING - Light Living Room Downlight 1 has no brightness attribute
+2025-06-07 12:30:14,839 - __main__ - WARNING - Light Living Room Downlight 2 has no brightness attribute
+2025-06-07 12:30:14,842 - __main__ - WARNING - Light Living Room Downlight 3 has no brightness attribute
+2025-06-07 12:30:14,843 - __main__ - WARNING - Light Living Room Downlight 4 has no brightness attribute
+2025-06-07 12:30:14,844 - __main__ - WARNING - Light Table Lamp has no brightness attribute
+2025-06-07 12:30:14,846 - __main__ - WARNING - Light Tall Lamp has no brightness attribute
+2025-06-07 12:30:14,850 - __main__ - WARNING - Light Reading Lamp has no brightness attribute
+2025-06-07 12:30:14,853 - __main__ - WARNING - Light Kitchen Sink has no brightness attribute
+2025-06-07 12:30:14,855 - __main__ - WARNING - Light Front Room Lamp 2 has no brightness attribute
+2025-06-07 12:30:14,858 - __main__ - WARNING - Light Front Room Lamp 1 has no brightness attribute
+2025-06-07 12:30:14,861 - __main__ - WARNING - Light Bedroom Lamp 1 has no brightness attribute
+2025-06-07 12:30:14,863 - __main__ - WARNING - Light Bedroom Lamp 2 has no brightness attribute
+2025-06-07 12:30:14,866 - __main__ - WARNING - Light Living Room Downlight 1 has no brightness attribute
+2025-06-07 12:30:14,868 - __main__ - WARNING - Light Living Room Downlight 2 has no brightness attribute
+2025-06-07 12:30:14,870 - __main__ - WARNING - Light Living Room Downlight 3 has no brightness attribute
+2025-06-07 12:30:14,873 - __main__ - WARNING - Light Living Room Downlight 4 has no brightness attribute
+2025-06-07 12:30:20,480 - __main__ - INFO - Hue App started 2025-06-07 12:30:20
+2025-06-07 12:30:20,635 - __main__ - INFO - Auto-refresh update at 12:30:20
+2025-06-07 12:30:20,649 - __main__ - INFO - Hue App started 2025-06-07 12:30:20
+2025-06-07 12:30:21,091 - __main__ - WARNING - Light Table Lamp has no brightness attribute
+2025-06-07 12:30:21,093 - __main__ - WARNING - Light Reading Lamp has no brightness attribute
+2025-06-07 12:30:21,094 - __main__ - WARNING - Light Tall Lamp has no brightness attribute
+2025-06-07 12:30:21,097 - __main__ - WARNING - Light Kitchen Sink has no brightness attribute
+2025-06-07 12:30:21,100 - __main__ - WARNING - Light Front Room Lamp 2 has no brightness attribute
+2025-06-07 12:30:21,102 - __main__ - WARNING - Light Front Room Lamp 1 has no brightness attribute
+2025-06-07 12:30:21,105 - __main__ - WARNING - Light Bedroom Lamp 2 has no brightness attribute
+2025-06-07 12:30:21,108 - __main__ - WARNING - Light Bedroom Lamp 1 has no brightness attribute
+2025-06-07 12:30:21,111 - __main__ - WARNING - Light Living Room Downlight 1 has no brightness attribute
+2025-06-07 12:30:21,113 - __main__ - WARNING - Light Living Room Downlight 2 has no brightness attribute
+2025-06-07 12:30:21,115 - __main__ - WARNING - Light Living Room Downlight 3 has no brightness attribute
+2025-06-07 12:30:21,117 - __main__ - WARNING - Light Living Room Downlight 4 has no brightness attribute
+2025-06-07 12:30:21,119 - __main__ - WARNING - Light Table Lamp has no brightness attribute
+2025-06-07 12:30:21,120 - __main__ - WARNING - Light Tall Lamp has no brightness attribute
+2025-06-07 12:30:21,123 - __main__ - WARNING - Light Reading Lamp has no brightness attribute
+2025-06-07 12:30:21,125 - __main__ - WARNING - Light Kitchen Sink has no brightness attribute
+2025-06-07 12:30:21,126 - __main__ - WARNING - Light Front Room Lamp 2 has no brightness attribute
+2025-06-07 12:30:21,128 - __main__ - WARNING - Light Front Room Lamp 1 has no brightness attribute
+2025-06-07 12:30:21,130 - __main__ - WARNING - Light Bedroom Lamp 1 has no brightness attribute
+2025-06-07 12:30:21,132 - __main__ - WARNING - Light Bedroom Lamp 2 has no brightness attribute
+2025-06-07 12:30:21,134 - __main__ - WARNING - Light Living Room Downlight 1 has no brightness attribute
+2025-06-07 12:30:21,137 - __main__ - WARNING - Light Living Room Downlight 2 has no brightness attribute
+2025-06-07 12:30:21,139 - __main__ - WARNING - Light Living Room Downlight 3 has no brightness attribute
+2025-06-07 12:30:21,141 - __main__ - WARNING - Light Living Room Downlight 4 has no brightness attribute
+2025-06-07 12:30:27,082 - __main__ - INFO - Hue App started 2025-06-07 12:30:27
+2025-06-07 12:30:27,244 - __main__ - INFO - Auto-refresh update at 12:30:27
+2025-06-07 12:30:27,254 - __main__ - INFO - Hue App started 2025-06-07 12:30:27
+2025-06-07 12:30:27,712 - __main__ - WARNING - Light Table Lamp has no brightness attribute
+2025-06-07 12:30:27,714 - __main__ - WARNING - Light Reading Lamp has no brightness attribute
+2025-06-07 12:30:27,716 - __main__ - WARNING - Light Tall Lamp has no brightness attribute
+2025-06-07 12:30:27,719 - __main__ - WARNING - Light Kitchen Sink has no brightness attribute
+2025-06-07 12:30:27,721 - __main__ - WARNING - Light Front Room Lamp 2 has no brightness attribute
+2025-06-07 12:30:27,724 - __main__ - WARNING - Light Front Room Lamp 1 has no brightness attribute
+2025-06-07 12:30:27,727 - __main__ - WARNING - Light Bedroom Lamp 2 has no brightness attribute
+2025-06-07 12:30:27,729 - __main__ - WARNING - Light Bedroom Lamp 1 has no brightness attribute
+2025-06-07 12:30:27,733 - __main__ - WARNING - Light Living Room Downlight 1 has no brightness attribute
+2025-06-07 12:30:27,734 - __main__ - WARNING - Light Living Room Downlight 2 has no brightness attribute
+2025-06-07 12:30:27,736 - __main__ - WARNING - Light Living Room Downlight 3 has no brightness attribute
+2025-06-07 12:30:27,737 - __main__ - WARNING - Light Living Room Downlight 4 has no brightness attribute
+2025-06-07 12:30:27,738 - __main__ - WARNING - Light Table Lamp has no brightness attribute
+2025-06-07 12:30:27,740 - __main__ - WARNING - Light Tall Lamp has no brightness attribute
+2025-06-07 12:30:27,742 - __main__ - WARNING - Light Reading Lamp has no brightness attribute
+2025-06-07 12:30:27,744 - __main__ - WARNING - Light Kitchen Sink has no brightness attribute
+2025-06-07 12:30:27,746 - __main__ - WARNING - Light Front Room Lamp 2 has no brightness attribute
+2025-06-07 12:30:27,748 - __main__ - WARNING - Light Front Room Lamp 1 has no brightness attribute
+2025-06-07 12:30:27,749 - __main__ - WARNING - Light Bedroom Lamp 1 has no brightness attribute
+2025-06-07 12:30:27,751 - __main__ - WARNING - Light Bedroom Lamp 2 has no brightness attribute
+2025-06-07 12:30:27,753 - __main__ - WARNING - Light Living Room Downlight 1 has no brightness attribute
+2025-06-07 12:30:27,756 - __main__ - WARNING - Light Living Room Downlight 2 has no brightness attribute
+2025-06-07 12:30:27,758 - __main__ - WARNING - Light Living Room Downlight 3 has no brightness attribute
+2025-06-07 12:30:27,760 - __main__ - WARNING - Light Living Room Downlight 4 has no brightness attribute
+2025-06-07 12:30:29,622 - __main__ - INFO - Hue App started 2025-06-07 12:30:29
+2025-06-07 12:30:30,086 - __main__ - WARNING - Light Table Lamp has no brightness attribute
+2025-06-07 12:30:30,088 - __main__ - WARNING - Light Reading Lamp has no brightness attribute
+2025-06-07 12:30:30,090 - __main__ - WARNING - Light Tall Lamp has no brightness attribute
+2025-06-07 12:30:30,094 - __main__ - WARNING - Light Kitchen Sink has no brightness attribute
+2025-06-07 12:30:30,097 - __main__ - WARNING - Light Front Room Lamp 2 has no brightness attribute
+2025-06-07 12:30:30,099 - __main__ - WARNING - Light Front Room Lamp 1 has no brightness attribute
+2025-06-07 12:30:30,103 - __main__ - WARNING - Light Bedroom Lamp 2 has no brightness attribute
+2025-06-07 12:30:30,105 - __main__ - WARNING - Light Bedroom Lamp 1 has no brightness attribute
+2025-06-07 12:30:30,109 - __main__ - WARNING - Light Living Room Downlight 1 has no brightness attribute
+2025-06-07 12:30:30,111 - __main__ - WARNING - Light Living Room Downlight 2 has no brightness attribute
+2025-06-07 12:30:30,112 - __main__ - WARNING - Light Living Room Downlight 3 has no brightness attribute
+2025-06-07 12:30:30,114 - __main__ - WARNING - Light Living Room Downlight 4 has no brightness attribute
+2025-06-07 12:30:30,117 - __main__ - WARNING - Light Table Lamp has no brightness attribute
+2025-06-07 12:30:30,119 - __main__ - WARNING - Light Tall Lamp has no brightness attribute
+2025-06-07 12:30:30,120 - __main__ - WARNING - Light Reading Lamp has no brightness attribute
+2025-06-07 12:30:30,122 - __main__ - WARNING - Light Kitchen Sink has no brightness attribute
+2025-06-07 12:30:30,124 - __main__ - WARNING - Light Front Room Lamp 2 has no brightness attribute
+2025-06-07 12:30:30,126 - __main__ - WARNING - Light Front Room Lamp 1 has no brightness attribute
+2025-06-07 12:30:30,128 - __main__ - WARNING - Light Bedroom Lamp 1 has no brightness attribute
+2025-06-07 12:30:30,130 - __main__ - WARNING - Light Bedroom Lamp 2 has no brightness attribute
+2025-06-07 12:30:30,133 - __main__ - WARNING - Light Living Room Downlight 1 has no brightness attribute
+2025-06-07 12:30:30,135 - __main__ - WARNING - Light Living Room Downlight 2 has no brightness attribute
+2025-06-07 12:30:30,136 - __main__ - WARNING - Light Living Room Downlight 3 has no brightness attribute
+2025-06-07 12:30:30,138 - __main__ - WARNING - Light Living Room Downlight 4 has no brightness attribute
+2025-06-07 12:30:30,197 - __main__ - INFO - Hue App started 2025-06-07 12:30:30
+2025-06-07 12:30:30,360 - __main__ - INFO - Auto-refresh update at 12:30:30
+2025-06-07 12:30:30,372 - __main__ - INFO - Hue App started 2025-06-07 12:30:30
