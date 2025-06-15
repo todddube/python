@@ -1,23 +1,35 @@
-# File System MCP Server - Project Structure
+# Filesystem MCP Server - Project Structure
 
 ```
 claude/
 ├── filesystem_mcp.py          # Main MCP server implementation
-├── install_for_claude.py      # Python installation script
+├── install_for_claude.py      # Cross-platform installer script
 ├── install.bat                # Windows batch installer
-├── test_simple.py            # Simple functionality test
-├── test_mcp.py               # Comprehensive test suite
-├── requirements.txt          # Python dependencies (none needed)
-├── package.json             # Node.js package metadata
-├── README.md               # Main documentation
-├── PROJECT_STRUCTURE.md    # This file
-└── config/                 # Configuration directory
-    ├── exclusions.json     # Directory exclusion patterns
-    └── settings.json       # Server settings
+├── install_macos.sh           # macOS installer script
+├── requirements.txt           # Python dependencies (none needed)
+├── package.json              # Node.js package metadata
+├── README.md                 # Main documentation
+├── ERROR_FIXES_SUMMARY.md    # Error fixes documentation
+├── OPTIMIZATION_SUMMARY.md   # Performance optimizations
+├── PROJECT_STRUCTURE.md      # This file
+├── config/                   # Configuration directory
+│   ├── exclusions.json       # Directory exclusion patterns
+│   └── settings.json         # Server settings
+└── tests/                    # Test suite
+    ├── __init__.py           # Test package initialization
+    ├── README.md             # Test documentation
+    ├── requirements.txt      # Test dependencies
+    ├── pytest.ini           # Pytest configuration
+    ├── test_runner.py        # Custom test runner (no deps)
+    ├── test_pytest.py        # Pytest-compatible tests
+    ├── test_optimized_mcp.py # Performance tests
+    ├── test_mcp.py           # Basic MCP tests
+    ├── test_mcp_sequence.py  # Protocol sequence tests
+    └── test_simple.py        # Simple functionality tests
 
 Generated files:
-├── filesystem_mcp.log      # Server log file (created at runtime)
-└── claude_desktop_config.json # Claude Desktop config (created by installer)
+├── filesystem_mcp.log         # Server log file (created at runtime)
+└── __pycache__/              # Python cache directories (auto-generated)
 ```
 
 ## File Descriptions

@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """
-Enhanced Filesystem MCP Server for Claude Desktop
+Optimized Filesystem MCP Server for Claude Desktop
 
 A high-performance, cross-platform filesystem Model Context Protocol server 
-with advanced features and optimizations.
+optimized specifically for Claude Desktop integration.
 
 Features:
+- Claude Desktop MCP 2024-11-05 protocol compliance
 - Cross-platform support (Windows, macOS, Linux)
-- Optimized file operations with caching
-- Advanced search with regex and content matching
-- Parallel operations for better performance
+- Optimized file operations with intelligent caching
+- Advanced search with regex and content matching  
+- Parallel operations with resource management
 - Enhanced security and path validation
 - Comprehensive logging and error handling
-- Smart exclusions based on OS
+- Smart OS-specific exclusions and configurations
+- Memory-efficient operations for large directories
 """
 
 import json
@@ -21,6 +23,7 @@ import sys
 import platform
 import threading
 import time
+import gc
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Set
 from datetime import datetime, timedelta
@@ -34,16 +37,21 @@ import mimetypes
 import hashlib
 from functools import lru_cache
 
-# Enhanced logging configuration
+# Optimized logging configuration for Claude Desktop
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('filesystem_mcp.log'),
+        logging.FileHandler('filesystem_mcp.log', encoding='utf-8'),
         logging.StreamHandler(sys.stderr)
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Claude Desktop compatibility constants
+CLAUDE_MCP_VERSION = "2024-11-05"
+MAX_RESPONSE_SIZE = 50 * 1024 * 1024  # 50MB max response size for Claude
+CHUNK_SIZE = 8192  # Optimal chunk size for file operations
 
 class OSDetector:
     """Cross-platform OS detection and configuration."""
@@ -63,19 +71,80 @@ class OSDetector:
     
     @staticmethod
     def get_default_drives() -> List[str]:
-        """Get default drives/mount points based on OS."""
+        """Get all available drives/mount points based on OS."""
         system = platform.system()
+        drives = []
+        
         if system == "Windows":
-            drives = []
-            for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+            import string
+            # Get all available drives
+            for letter in string.ascii_uppercase:
                 drive = f"{letter}:"
                 if os.path.exists(f"{drive}\\"):
                     drives.append(drive)
-            return drives or ['C:', 'D:']  # Fallback
+            
+            # If no drives found, fallback to common ones
+            if not drives:
+                drives = ['C:']
+            
+            print(f"Windows drives detected: {drives}", file=sys.stderr)
+            return drives
+            
         elif system == "Darwin":  # macOS
-            return ["/", "/Users", "/Applications", "/Volumes"]
+            # Get all mounted volumes
+            try:
+                import subprocess
+                result = subprocess.run(['df', '-h'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    lines = result.stdout.strip().split('\n')[1:]  # Skip header
+                    for line in lines:
+                        parts = line.split()
+                        if len(parts) >= 6:
+                            mount_point = parts[-1]  # Last column is mount point
+                            # Include root, /Users, /Applications, and /Volumes mounts
+                            if (mount_point == '/' or 
+                                mount_point.startswith('/Users') or
+                                mount_point.startswith('/Applications') or
+                                mount_point.startswith('/Volumes')):
+                                if mount_point not in drives:
+                                    drives.append(mount_point)
+            except Exception as e:
+                print(f"Error detecting macOS volumes: {e}", file=sys.stderr)
+            
+            # Fallback to common paths
+            if not drives:
+                drives = ["/", "/Users", "/Applications"]
+            
+            # Always include /Volumes for external drives
+            if "/Volumes" not in drives and os.path.exists("/Volumes"):
+                drives.append("/Volumes")
+            
+            print(f"macOS volumes detected: {drives}", file=sys.stderr)
+            return drives
+            
         else:  # Linux and others
-            return ["/", "/home", "/mnt", "/media"]
+            # Get mounted filesystems
+            try:
+                with open('/proc/mounts', 'r') as f:
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            mount_point = parts[1]
+                            # Include common user-accessible mount points
+                            if (mount_point == '/' or 
+                                mount_point.startswith('/home') or
+                                mount_point.startswith('/mnt') or
+                                mount_point.startswith('/media')):
+                                if mount_point not in drives:
+                                    drives.append(mount_point)
+            except Exception as e:
+                print(f"Error detecting Linux mounts: {e}", file=sys.stderr)
+            
+            # Fallback
+            if not drives:
+                drives = ["/", "/home"]
+            
+            return drives
     
     @staticmethod
     def get_default_exclusions() -> List[str]:
@@ -176,36 +245,45 @@ class PerformanceCache:
             self.access_times.clear()
 
 class MCPServer:
-    """Enhanced MCP Server implementation with performance optimizations."""
+    """Optimized MCP Server implementation for Claude Desktop."""
     
     def __init__(self, name: str):
         self.name = name
         self.tools = []
         self.request_id = 0
-        self.cache = PerformanceCache()
-        self.executor = ThreadPoolExecutor(max_workers=4)
+        self.cache = PerformanceCache(max_size=2000, ttl_seconds=300)
+        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mcp-worker")
+        self._initialized = False
+        self._shutdown = False
     
     def add_tool(self, tool_def: Dict[str, Any]):
-        """Add a tool definition."""
-        self.tools.append(tool_def)
+        """Add a tool definition with validation."""
+        required_fields = ["name", "description", "inputSchema"]
+        if all(field in tool_def for field in required_fields):
+            self.tools.append(tool_def)
+            logger.debug(f"Added tool: {tool_def['name']}")
+        else:
+            logger.error(f"Invalid tool definition: missing required fields")
     
     async def handle_request(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Handle incoming MCP requests."""
+        """Handle incoming MCP requests with enhanced error handling."""
         try:
             method = request.get("method")
             params = request.get("params", {})
             request_id = request.get("id")
             
-            print(f"Handling request: {method}", file=sys.stderr)
+            logger.debug(f"Handling request: {method} (id: {request_id})")
             
             if method == "initialize":
                 return {
                     "jsonrpc": "2.0",
                     "id": request_id,
                     "result": {
-                        "protocolVersion": "2024-11-05",
+                        "protocolVersion": CLAUDE_MCP_VERSION,
                         "capabilities": {
-                            "tools": {}
+                            "tools": {},
+                            "resources": {},
+                            "prompts": {}
                         },
                         "serverInfo": {
                             "name": self.name,
@@ -213,165 +291,186 @@ class MCPServer:
                         }
                     }
                 }
-            elif method == "initialized":
+            elif method in ["initialized", "notifications/initialized"]:
                 # This is a notification, no response needed
-                print("Server initialized successfully", file=sys.stderr)
+                self._initialized = True
+                logger.info("MCP Server initialized successfully")
                 return None
+                
             elif method == "tools/list":
                 return {
                     "jsonrpc": "2.0",
                     "id": request_id,
                     "result": {"tools": self.tools}
                 }
+                
             elif method == "tools/call":
                 tool_name = params.get("name")
                 arguments = params.get("arguments", {})
                 
-                # Find and call the tool
-                result = await self.call_tool(tool_name, arguments)
+                if not tool_name:
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {"code": -32602, "message": "Missing tool name"}
+                    }
+                
+                try:
+                    # Find and call the tool
+                    result = await self.call_tool(tool_name, arguments)
+                    
+                    # Ensure result is not too large for Claude Desktop
+                    result_str = json.dumps(result)
+                    if len(result_str) > MAX_RESPONSE_SIZE:
+                        logger.warning(f"Response too large ({len(result_str)} bytes), truncating")
+                        # Truncate the response
+                        truncated_content = [{"type": "text", "text": "Response truncated due to size limits. Please refine your query for smaller results."}]
+                        result = truncated_content
+                    
+                    return {
+                        "jsonrpc": "2.0", 
+                        "id": request_id,
+                        "result": {"content": result}
+                    }
+                except Exception as e:
+                    logger.error(f"Tool execution error: {e}")
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {"code": -32603, "message": f"Tool execution failed: {str(e)}"}
+                    }
+                    
+            elif method == "resources/list":
+                # Return empty resources list
                 return {
-                    "jsonrpc": "2.0", 
+                    "jsonrpc": "2.0",
                     "id": request_id,
-                    "result": {"content": result}
+                    "result": {"resources": []}
+                }
+            elif method == "prompts/list":
+                # Return empty prompts list
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"prompts": []}
                 }
             else:
+                logger.warning(f"Unknown method: {method}")
                 return {
                     "jsonrpc": "2.0",
                     "id": request_id,
                     "error": {"code": -32601, "message": f"Method not found: {method}"}
                 }
+                
         except Exception as e:
-            print(f"Error in handle_request: {e}", file=sys.stderr)
+            logger.error(f"Error in handle_request: {e}")
             return {
                 "jsonrpc": "2.0",
                 "id": request.get("id"),
-                "error": {"code": -32603, "message": f"Internal error: {str(e)}"}            }
+                "error": {"code": -32603, "message": f"Internal error: {str(e)}"}
+            }
     
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Override this method to handle tool calls."""
         return [{"type": "text", "text": f"Tool {name} not implemented"}]
     
     async def run_stdio(self):
-        """Run the MCP server using stdio transport."""
-        print("MCP Server starting...", file=sys.stderr)
-        while True:
-            try:
-                line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
-                if not line:
-                    print("No more input, exiting...", file=sys.stderr)
-                    break
-                
-                request = json.loads(line.strip())
-                response = await self.handle_request(request)
-                
-                # Only send response if it's not None (some methods like 'initialized' don't need responses)
-                if response is not None:
-                    print(json.dumps(response), flush=True)
-                
-            except json.JSONDecodeError as e:
-                print(f"JSON decode error: {e}", file=sys.stderr)
-                continue
-            except Exception as e:
-                print(f"Error handling request: {e}", file=sys.stderr)
-                logger.error(f"Error handling request: {e}")
-                continue
+        """Run the MCP server using stdio transport with enhanced error handling."""
+        logger.info("MCP Server starting stdio transport...")
+        
+        try:
+            while not self._shutdown:
+                try:
+                    # Read line with timeout to allow for graceful shutdown
+                    line = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline),
+                        timeout=1.0
+                    )
+                    
+                    if not line:
+                        logger.info("No more input, exiting...")
+                        break
+                    
+                    line = line.strip()
+                    if not line:
+                        continue
+                        
+                    request = json.loads(line)
+                    response = await self.handle_request(request)
+                    
+                    # Only send response if it's not None
+                    if response is not None:
+                        response_json = json.dumps(response, separators=(',', ':'))
+                        print(response_json, flush=True)
+                        
+                except asyncio.TimeoutError:
+                    # Timeout is normal, continue the loop
+                    continue
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON decode error: {e}")
+                    error_response = {
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {"code": -32700, "message": "Parse error"}
+                    }
+                    print(json.dumps(error_response), flush=True)
+                except Exception as e:
+                    logger.error(f"Error handling request: {e}")
+                    continue
+                    
+        except KeyboardInterrupt:
+            logger.info("Received interrupt signal")
+        except Exception as e:
+            logger.error(f"Fatal error in stdio transport: {e}")
+        finally:
+            await self.shutdown()
+    
+    async def shutdown(self):
+        """Graceful shutdown of the server."""
+        logger.info("Shutting down MCP server...")
+        self._shutdown = True
+        
+        if hasattr(self, 'executor'):
+            self.executor.shutdown(wait=True)
+            
+        if hasattr(self, 'cache'):
+            self.cache.clear()
+            
+        # Force garbage collection
+        gc.collect()
 
 class FilesystemMCP:
-    """Enhanced Filesystem MCP Server implementation with cross-platform support."""
+    """Optimized Filesystem MCP implementation with embedded configuration for Claude Desktop."""
     
-    def __init__(self, config_dir: str = "config"):
-        self.config_dir = Path(config_dir)
-        self.config_dir.mkdir(exist_ok=True)
+    def __init__(self):
         self.os_detector = OSDetector()
-        self.cache = PerformanceCache()
+        self.cache = PerformanceCache(max_size=2000, ttl_seconds=300)
         
-        # Get OS-specific defaults
+        # Get OS-specific defaults - all embedded, no external files needed
         self.os_info = self.os_detector.get_os_info()
-        self.default_exclusions = self.os_detector.get_default_exclusions()
+        self.exclusions = self.os_detector.get_default_exclusions()
         self.allowed_drives = self.os_detector.get_default_drives()
         
         logger.info(f"Detected OS: {self.os_info['system']} {self.os_info['release']}")
         logger.info(f"Available drives/paths: {self.allowed_drives}")
+        logger.info(f"Loaded {len(self.exclusions)} embedded exclusion patterns")
         
-        # Load configuration
-        self.load_config()
+        # Embedded optimized settings - no external config needed
+        cpu_count = os.cpu_count() or 4
+        self.max_file_size = 50 * 1024 * 1024  # 50MB
+        self.max_search_results = 2000
+        self.thread_pool_size = min(8, cpu_count + 4)
+        self.chunk_size = 8192
+        self.max_response_size = 50 * 1024 * 1024  # 50MB
         
-        # Initialize thread pool for parallel operations
-        self.executor = ThreadPoolExecutor(max_workers=6)
+        # Initialize optimized thread pool
+        self.executor = ThreadPoolExecutor(
+            max_workers=self.thread_pool_size,
+            thread_name_prefix="filesystem-worker"        )
         
-    def load_config(self):
-        """Load configuration from config files."""
-        exclusions_file = self.config_dir / "exclusions.json"
-        settings_file = self.config_dir / "settings.json"
-        
-        # Load exclusions
-        if exclusions_file.exists():
-            try:
-                with open(exclusions_file, 'r') as f:
-                    config_exclusions = json.load(f)
-                    self.exclusions = config_exclusions.get('patterns', self.default_exclusions)
-                    logger.info(f"Loaded {len(self.exclusions)} exclusion patterns")
-            except Exception as e:
-                logger.warning(f"Failed to load exclusions config: {e}")
-                self.exclusions = self.default_exclusions
-        else:
-            # Create default exclusions file
-            self.exclusions = self.default_exclusions
-            self.save_exclusions_config()
-        
-        # Load settings
-        if settings_file.exists():
-            try:
-                with open(settings_file, 'r') as f:
-                    settings = json.load(f)
-                    self.allowed_drives = settings.get('allowed_drives', self.allowed_drives)
-                    self.max_file_size = settings.get('max_file_size_mb', 10) * 1024 * 1024  # Convert to bytes
-                    self.max_search_results = settings.get('max_search_results', 1000)
-                    logger.info(f"Loaded settings: drives={self.allowed_drives}")
-            except Exception as e:
-                logger.warning(f"Failed to load settings: {e}")
-                self.max_file_size = 10 * 1024 * 1024  # 10MB default
-                self.max_search_results = 1000
-        else:
-            self.max_file_size = 10 * 1024 * 1024  # 10MB default
-            self.max_search_results = 1000
-            self.save_settings_config()
-    
-    def save_exclusions_config(self):
-        """Save exclusions configuration to file."""
-        exclusions_file = self.config_dir / "exclusions.json"
-        config = {
-            "description": "Filesystem exclusion patterns. Use * for wildcards.",
-            "patterns": self.exclusions,
-            "examples": [
-                "C:\\Windows\\*",
-                "*\\AppData\\*",
-                "*.tmp",
-                "*\\node_modules\\*"
-            ]
-        }
-        try:
-            with open(exclusions_file, 'w') as f:
-                json.dump(config, f, indent=2)
-            logger.info(f"Saved exclusions config to {exclusions_file}")
-        except Exception as e:
-            logger.error(f"Failed to save exclusions config: {e}")
-    
-    def save_settings_config(self):
-        """Save settings configuration to file."""
-        settings_file = self.config_dir / "settings.json"
-        config = {
-            "description": "Filesystem MCP Server Settings",
-            "allowed_drives": self.allowed_drives,
-            "max_file_size_mb": self.max_file_size // (1024 * 1024),
-            "max_search_results": self.max_search_results
-        }
-        try:
-            with open(settings_file, 'w') as f:
-                json.dump(config, f, indent=2)
-            logger.info(f"Saved settings config to {settings_file}")
-        except Exception as e:
-            logger.error(f"Failed to save settings config: {e}")
+        # Performance monitoring
+        self._operation_count = 0
+        self._start_time = time.time()
     
     def is_path_allowed(self, path: Union[str, Path]) -> bool:
         """Check if a path is allowed based on exclusion patterns with cross-platform support."""
