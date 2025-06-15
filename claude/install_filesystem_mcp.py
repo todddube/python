@@ -256,8 +256,7 @@ class FilesystemMCPInstaller:
                     shutil.copy2(readme_file, server_dir / "README.md")
                     print(f"✅ Copied {readme_name} as README.md")
                     break
-            
-            # Copy requirements.txt if it exists
+              # Copy requirements.txt if it exists
             req_file = self.script_dir / "requirements.txt"
             if req_file.exists():
                 shutil.copy2(req_file, server_dir / "requirements.txt")
@@ -303,7 +302,7 @@ cd "{server_dir}"
             return False
     
     def update_claude_config(self, server_dir: Path, drives: List[str], config_path: Path) -> bool:
-        """Update Claude Desktop configuration with detected drives."""
+        """Update Claude Desktop configuration with proper MCP server configuration."""
         if not config_path:
             print("❌ No Claude Desktop config path available")
             return False
@@ -316,9 +315,16 @@ cd "{server_dir}"
             
             # Load existing config or create new one
             if config_path.exists():
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                print("📋 Loaded existing Claude Desktop configuration")
+                try:
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                    print("📋 Loaded existing Claude Desktop configuration")
+                except json.JSONDecodeError as e:
+                    print(f"⚠️  Invalid JSON in existing config, creating backup and starting fresh")
+                    backup_path = config_path.with_suffix('.json.backup')
+                    shutil.copy2(config_path, backup_path)
+                    print(f"📋 Backed up existing config to: {backup_path}")
+                    config = {}
             else:
                 config = {}
                 print("📋 Creating new Claude Desktop configuration")
@@ -326,28 +332,46 @@ cd "{server_dir}"
             # Ensure mcpServers section exists
             if 'mcpServers' not in config:
                 config['mcpServers'] = {}
+                print("✅ Created mcpServers section")
             
-            # Add filesystem MCP server configuration with drive information
+            # Create the filesystem MCP server configuration
+            server_name = "filesystem"
+            
             if self.system == "Windows":
+                # Windows: Use batch script for better Windows integration
                 server_config = {
-                    "command": str(server_dir / "run_mcp.bat"),
+                    "command": str(server_dir / "run_mcp.bat").replace('\\', '/'),  # Normalize path
                     "args": [],
                     "env": {
                         "FILESYSTEM_MCP_DRIVES": ",".join(drives),
-                        "FILESYSTEM_MCP_OS": self.system
-                    }
+                        "FILESYSTEM_MCP_OS": self.system,
+                        "FILESYSTEM_MCP_LOG_LEVEL": "INFO"
+                    },
+                    "disabled": False
                 }
             else:
+                # macOS/Linux: Direct Python execution
                 server_config = {
                     "command": sys.executable,
                     "args": [str(server_dir / "filesystem_mcp.py")],
                     "env": {
                         "FILESYSTEM_MCP_DRIVES": ",".join(drives),
-                        "FILESYSTEM_MCP_OS": self.system
-                    }
+                        "FILESYSTEM_MCP_OS": self.system,
+                        "FILESYSTEM_MCP_LOG_LEVEL": "INFO"
+                    },
+                    "disabled": False
                 }
             
-            config['mcpServers']['filesystem'] = server_config
+            # Check if filesystem server already exists and update it
+            if server_name in config['mcpServers']:
+                print("⚠️  Existing filesystem MCP server found, updating configuration")
+            else:
+                print("✅ Adding new filesystem MCP server configuration")
+            
+            config['mcpServers'][server_name] = server_config
+            
+            # Validate the configuration before saving
+            self._validate_claude_config(config, server_dir)
             
             # Save updated config with proper formatting
             with open(config_path, 'w', encoding='utf-8') as f:
@@ -356,13 +380,80 @@ cd "{server_dir}"
             print(f"✅ Updated Claude config: {config_path}")
             print(f"🔗 Configured drives: {', '.join(drives)}")
             print(f"🖥️  OS environment: {self.system}")
+            print(f"🚀 Server command: {server_config['command']}")
+            
+            # Display the final configuration for verification
+            self._display_config_summary(config, server_name)
+            
             return True
             
         except Exception as e:
             print(f"❌ Error updating Claude config: {e}")
             print(f"   Config path: {config_path}")
             print(f"   Drives: {drives}")
+            import traceback
+            traceback.print_exc()
             return False
+    
+    def _validate_claude_config(self, config: Dict, server_dir: Path) -> bool:
+        """Validate the Claude Desktop configuration."""
+        print("🔍 Validating Claude Desktop configuration...")
+        
+        # Check basic structure
+        if 'mcpServers' not in config:
+            raise ValueError("Missing mcpServers section")
+        
+        filesystem_config = config['mcpServers'].get('filesystem')
+        if not filesystem_config:
+            raise ValueError("Missing filesystem server configuration")
+        
+        # Check required fields
+        required_fields = ['command', 'args', 'env']
+        for field in required_fields:
+            if field not in filesystem_config:
+                raise ValueError(f"Missing required field: {field}")
+        
+        # Validate command path exists
+        command = filesystem_config['command']
+        if self.system == "Windows" and command.endswith('.bat'):
+            command_path = Path(command)
+        else:
+            # For non-Windows or direct Python execution
+            if command == sys.executable:
+                command_path = Path(sys.executable)
+            else:
+                command_path = Path(command)
+        
+        if not command_path.exists():
+            print(f"⚠️  Warning: Command path does not exist: {command_path}")
+        else:
+            print(f"✅ Command path validated: {command_path}")
+        
+        # Validate environment variables
+        env = filesystem_config.get('env', {})
+        if 'FILESYSTEM_MCP_DRIVES' not in env:
+            raise ValueError("Missing FILESYSTEM_MCP_DRIVES environment variable")
+        
+        print("✅ Configuration validation passed")
+        return True
+    
+    def _display_config_summary(self, config: Dict, server_name: str):
+        """Display a summary of the Claude Desktop configuration."""
+        print("\n📋 Claude Desktop Configuration Summary:")
+        print("=" * 50)
+        
+        server_config = config['mcpServers'][server_name]
+        print(f"Server Name: {server_name}")
+        print(f"Command: {server_config['command']}")
+        print(f"Arguments: {server_config.get('args', [])}")
+        print(f"Disabled: {server_config.get('disabled', False)}")
+        
+        print("\nEnvironment Variables:")
+        for key, value in server_config.get('env', {}).items():
+            print(f"  {key}: {value}")
+        
+        print("\nTotal MCP Servers Configured:", len(config['mcpServers']))
+        print("=" * 50)
     
     def test_installation(self, server_dir: Path) -> bool:
         """Test the MCP server installation."""

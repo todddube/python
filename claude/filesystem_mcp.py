@@ -24,6 +24,7 @@ import platform
 import threading
 import time
 import gc
+import argparse
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Set
 from datetime import datetime, timedelta
@@ -439,34 +440,228 @@ class MCPServer:
         # Force garbage collection
         gc.collect()
 
+class ConfigManager:
+    """Configuration manager for command line args and environment variables."""
+    
+    @staticmethod
+    def parse_args() -> argparse.Namespace:
+        """Parse command line arguments."""
+        parser = argparse.ArgumentParser(
+            description="Filesystem MCP Server for Claude Desktop",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog="""
+Environment Variables:
+  FILESYSTEM_MCP_DRIVES          Comma-separated list of allowed drives/paths
+  FILESYSTEM_MCP_OS              Operating system override
+  FILESYSTEM_MCP_MAX_FILE_SIZE   Maximum file size in MB (default: 50)
+  FILESYSTEM_MCP_MAX_RESULTS     Maximum search results (default: 2000)
+  FILESYSTEM_MCP_THREADS         Number of worker threads (default: auto)
+  FILESYSTEM_MCP_CACHE_TTL       Cache TTL in seconds (default: 300)
+  FILESYSTEM_MCP_LOG_LEVEL       Log level (DEBUG, INFO, WARNING, ERROR)
+
+Examples:
+  python filesystem_mcp.py --drives "C:,D:" --max-file-size 100
+  FILESYSTEM_MCP_DRIVES="C:,D:" python filesystem_mcp.py
+            """
+        )
+        
+        parser.add_argument(
+            '--drives', '--allowed-drives',
+            type=str,
+            help='Comma-separated list of allowed drives/paths (e.g., "C:,D:" or "/,/home")'
+        )
+        
+        parser.add_argument(
+            '--exclude-patterns',
+            type=str,
+            help='Comma-separated list of additional exclusion patterns'
+        )
+        
+        parser.add_argument(
+            '--max-file-size',
+            type=int,
+            help='Maximum file size in MB (default: 50)'
+        )
+        
+        parser.add_argument(
+            '--max-results',
+            type=int,
+            help='Maximum number of search results (default: 2000)'
+        )
+        
+        parser.add_argument(
+            '--threads',
+            type=int,
+            help='Number of worker threads (default: auto-detect)'
+        )
+        
+        parser.add_argument(
+            '--cache-ttl',
+            type=int,
+            help='Cache TTL in seconds (default: 300)'
+        )
+        
+        parser.add_argument(
+            '--log-level',
+            choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+            help='Set logging level'
+        )
+        
+        parser.add_argument(
+            '--version',
+            action='version',
+            version=f'Filesystem MCP Server 1.0.0 (MCP Protocol {CLAUDE_MCP_VERSION})'
+        )
+        
+        return parser.parse_args()
+    
+    @staticmethod
+    def get_config() -> Dict[str, Any]:
+        """Get configuration from args and environment variables."""
+        args = ConfigManager.parse_args()
+        
+        # Start with defaults
+        config = {
+            'drives': None,
+            'exclude_patterns': [],
+            'max_file_size_mb': 50,
+            'max_results': 2000,
+            'threads': None,
+            'cache_ttl': 300,
+            'log_level': 'INFO'
+        }
+        
+        # Apply environment variables
+        env_drives = os.getenv('FILESYSTEM_MCP_DRIVES')
+        if env_drives:
+            config['drives'] = [d.strip() for d in env_drives.split(',') if d.strip()]
+        
+        env_os = os.getenv('FILESYSTEM_MCP_OS')
+        if env_os:
+            config['os_override'] = env_os
+        
+        env_max_size = os.getenv('FILESYSTEM_MCP_MAX_FILE_SIZE')
+        if env_max_size:
+            try:
+                config['max_file_size_mb'] = int(env_max_size)
+            except ValueError:
+                logger.warning(f"Invalid FILESYSTEM_MCP_MAX_FILE_SIZE: {env_max_size}")
+        
+        env_max_results = os.getenv('FILESYSTEM_MCP_MAX_RESULTS')
+        if env_max_results:
+            try:
+                config['max_results'] = int(env_max_results)
+            except ValueError:
+                logger.warning(f"Invalid FILESYSTEM_MCP_MAX_RESULTS: {env_max_results}")
+        
+        env_threads = os.getenv('FILESYSTEM_MCP_THREADS')
+        if env_threads:
+            try:
+                config['threads'] = int(env_threads)
+            except ValueError:
+                logger.warning(f"Invalid FILESYSTEM_MCP_THREADS: {env_threads}")
+        
+        env_cache_ttl = os.getenv('FILESYSTEM_MCP_CACHE_TTL')
+        if env_cache_ttl:
+            try:
+                config['cache_ttl'] = int(env_cache_ttl)
+            except ValueError:
+                logger.warning(f"Invalid FILESYSTEM_MCP_CACHE_TTL: {env_cache_ttl}")
+        
+        env_log_level = os.getenv('FILESYSTEM_MCP_LOG_LEVEL')
+        if env_log_level and env_log_level.upper() in ['DEBUG', 'INFO', 'WARNING', 'ERROR']:
+            config['log_level'] = env_log_level.upper()
+        
+        # Apply command line arguments (override env vars)
+        if args.drives:
+            config['drives'] = [d.strip() for d in args.drives.split(',') if d.strip()]
+        
+        if args.exclude_patterns:
+            config['exclude_patterns'] = [p.strip() for p in args.exclude_patterns.split(',') if p.strip()]
+        
+        if args.max_file_size is not None:
+            config['max_file_size_mb'] = args.max_file_size
+        
+        if args.max_results is not None:
+            config['max_results'] = args.max_results
+        
+        if args.threads is not None:
+            config['threads'] = args.threads
+        
+        if args.cache_ttl is not None:
+            config['cache_ttl'] = args.cache_ttl
+        
+        if args.log_level:
+            config['log_level'] = args.log_level
+        
+        return config
+
+
 class FilesystemMCP:
     """Optimized Filesystem MCP implementation with embedded configuration for Claude Desktop."""
     
-    def __init__(self):
-        self.os_detector = OSDetector()
-        self.cache = PerformanceCache(max_size=2000, ttl_seconds=300)
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize with configuration from args and environment variables."""
+        # Get configuration if not provided
+        if config is None:
+            config = ConfigManager.get_config()
         
-        # Get OS-specific defaults - all embedded, no external files needed
+        # Set up logging level first
+        log_level = getattr(logging, config.get('log_level', 'INFO'))
+        logging.getLogger().setLevel(log_level)
+        logger.setLevel(log_level)
+        
+        self.config = config
+        self.os_detector = OSDetector()
+        
+        # Setup cache with configurable TTL
+        cache_ttl = config.get('cache_ttl', 300)
+        self.cache = PerformanceCache(max_size=2000, ttl_seconds=cache_ttl)
+        
+        # Get OS-specific defaults
         self.os_info = self.os_detector.get_os_info()
+        
+        # Use configured drives or detect automatically
+        if config.get('drives'):
+            self.allowed_drives = config['drives']
+            logger.info(f"Using configured drives: {self.allowed_drives}")
+        else:
+            self.allowed_drives = self.os_detector.get_default_drives()
+            logger.info(f"Auto-detected drives: {self.allowed_drives}")
+        
+        # Setup exclusion patterns
         self.exclusions = self.os_detector.get_default_exclusions()
-        self.allowed_drives = self.os_detector.get_default_drives()
+        if config.get('exclude_patterns'):
+            self.exclusions.extend(config['exclude_patterns'])
+            logger.info(f"Added {len(config['exclude_patterns'])} custom exclusion patterns")
         
         logger.info(f"Detected OS: {self.os_info['system']} {self.os_info['release']}")
         logger.info(f"Available drives/paths: {self.allowed_drives}")
-        logger.info(f"Loaded {len(self.exclusions)} embedded exclusion patterns")
+        logger.info(f"Loaded {len(self.exclusions)} exclusion patterns")
         
-        # Embedded optimized settings - no external config needed
+        # Configure performance settings
         cpu_count = os.cpu_count() or 4
-        self.max_file_size = 50 * 1024 * 1024  # 50MB
-        self.max_search_results = 2000
-        self.thread_pool_size = min(8, cpu_count + 4)
+        self.max_file_size = config.get('max_file_size_mb', 50) * 1024 * 1024  # Convert to bytes
+        self.max_search_results = config.get('max_results', 2000)
+        
+        # Configure thread pool
+        configured_threads = config.get('threads')
+        if configured_threads:
+            self.thread_pool_size = configured_threads
+        else:
+            self.thread_pool_size = min(8, cpu_count + 4)
+        
+        logger.info(f"Performance settings: max_file_size={self.max_file_size//1024//1024}MB, "
+                   f"max_results={self.max_search_results}, threads={self.thread_pool_size}")
+        
         self.chunk_size = 8192
         self.max_response_size = 50 * 1024 * 1024  # 50MB
         
         # Initialize optimized thread pool
         self.executor = ThreadPoolExecutor(
             max_workers=self.thread_pool_size,
-            thread_name_prefix="filesystem-worker"        )
+            thread_name_prefix="filesystem-worker"
+        )
         
         # Performance monitoring
         self._operation_count = 0
@@ -620,9 +815,9 @@ class FilesystemMCP:
 class FilesystemMCPServer(MCPServer):
     """Filesystem MCP Server implementation."""
     
-    def __init__(self):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__("filesystem-mcp")
-        self.fs = FilesystemMCP()
+        self.fs = FilesystemMCP(config)
         self.setup_tools()
     
     def setup_tools(self):
@@ -1088,10 +1283,25 @@ class FilesystemMCPServer(MCPServer):
 
 async def main():
     """Main entry point for the MCP server."""
-    logger.info("Starting Filesystem MCP Server")
-    
-    server = FilesystemMCPServer()
-    await server.run_stdio()
+    try:
+        # Get configuration from command line args and environment variables
+        config = ConfigManager.get_config()
+        
+        logger.info("Starting Filesystem MCP Server")
+        logger.info(f"Configuration: drives={config.get('drives', 'auto-detect')}, "
+                   f"max_file_size={config.get('max_file_size_mb')}MB, "
+                   f"max_results={config.get('max_results')}, "
+                   f"threads={config.get('threads', 'auto')}")
+        
+        # Create and run server with configuration
+        server = FilesystemMCPServer(config)
+        await server.run_stdio()
+        
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
+    except Exception as e:
+        logger.error(f"Server error: {e}", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     asyncio.run(main())
