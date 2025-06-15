@@ -7,7 +7,7 @@
     "start": "python filesystem_mcp.py"
   },
   "keywords": ["mcp", "filesystem", "claude", "files"],
-  "author": "Your Name",
+  "author": "Todd Dube",
   "license": "MIT",
   "dependencies": {
     "mcp": "^1.0.0"

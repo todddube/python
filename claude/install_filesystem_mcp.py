@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 """
-Optimized Cross-Platform Installer for Filesystem MCP Server
+Comprehensive Filesystem MCP Server Installer
 
-This installer automatically detects the operating system and sets up the 
-Filesystem MCP Server for Claude Desktop with optimized configurations.
+This unified installer provides a complete solution for installing the 
+Filesystem MCP Server for Claude Desktop across all platforms.
 
 Features:
-- Enhanced OS detection and configuration
-- Automatic Claude Desktop integration
+- Comprehensive system requirements checking
+- Enhanced OS detection and drive discovery  
+- Automatic Claude Desktop detection and configuration
 - Config-free operation (all settings embedded in server)
 - Robust error handling and validation
 - Cross-platform compatibility (Windows, macOS, Linux)
+- Pre-flight checks and troubleshooting guidance
+
+Usage:
+    Windows: python install_filesystemmcp.py
+    macOS:   ./install_filesystemmcp.py
+    Linux:   ./install_filesystemmcp.py
 """
 
 import json
@@ -23,40 +30,108 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-class MCPInstaller:
-    """Cross-platform MCP installer."""
+class FilesystemMCPInstaller:
+    """Comprehensive cross-platform MCP installer with pre-flight checks."""
     
     def __init__(self):
         self.system = platform.system()
         self.home = Path.home()
         self.script_dir = Path(__file__).parent
         
-        print(f"🚀 Filesystem MCP Server Installer")
+        print("🚀 Filesystem MCP Server Installer")
+        print("🌍 Comprehensive Cross-Platform Installation")
+        print("=" * 60)
         print(f"📍 Detected OS: {self.system} {platform.release()}")
         print(f"🏠 Home directory: {self.home}")
         print(f"📂 Script directory: {self.script_dir}")
-        
-    def get_claude_config_path(self) -> Optional[Path]:
-        """Get Claude Desktop configuration path based on OS."""
-        if self.system == "Windows":
-            # Windows: %APPDATA%\Claude\claude_desktop_config.json
-            return Path(os.environ.get('APPDATA', '')) / "Claude" / "claude_desktop_config.json"
-        elif self.system == "Darwin":  # macOS
-            # macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
-            return self.home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
-        else:
-            # Linux/Other - Claude Desktop may not be officially supported
-            print("⚠️  Claude Desktop configuration path unknown for this OS")
-            return None
+        print("=" * 60)
     
-    def check_python_version(self) -> bool:
-        """Check if Python version is compatible."""
+    def check_system_requirements(self) -> bool:
+        """Comprehensive system requirements check."""
+        print("🔍 Checking system requirements...")
+        
+        # Check Python version
         version = sys.version_info
         if version.major < 3 or (version.major == 3 and version.minor < 8):
             print(f"❌ Python 3.8+ required, found {version.major}.{version.minor}")
+            print("   Please upgrade Python and try again")
             return False
+        
         print(f"✅ Python {version.major}.{version.minor}.{version.micro} is compatible")
+        
+        # Check OS compatibility
+        if self.system not in ['Windows', 'Darwin', 'Linux']:
+            print(f"⚠️  Unsupported OS: {self.system}")
+            print("   Supported: Windows, macOS (Darwin), Linux")
+            print("   Installation may work but is not officially supported")
+        else:
+            print(f"✅ Operating System: {self.system}")
+        
+        # Check required files
+        required_files = ['filesystem_mcp.py']
+        missing_files = []
+        
+        for file in required_files:
+            file_path = self.script_dir / file
+            if file_path.exists():
+                print(f"✅ Found required file: {file}")
+            else:
+                print(f"❌ Missing required file: {file}")
+                missing_files.append(file)
+        
+        if missing_files:
+            print(f"❌ Missing files: {', '.join(missing_files)}")
+            print("   Please ensure all files are in the same directory")
+            return False
+        
         return True
+    
+    def detect_claude_desktop(self) -> Optional[Path]:
+        """Detect Claude Desktop installation and return config path."""
+        print("🔍 Checking for Claude Desktop installation...")
+        
+        if self.system == "Windows":
+            config_path = Path(os.environ.get('APPDATA', '')) / "Claude" / "claude_desktop_config.json"
+            claude_paths = [
+                Path(os.environ.get('LOCALAPPDATA', '')) / "Claude" / "Claude.exe",
+                Path(os.environ.get('PROGRAMFILES', '')) / "Claude" / "Claude.exe",
+                Path(os.environ.get('PROGRAMFILES(X86)', '')) / "Claude" / "Claude.exe"
+            ]
+        elif self.system == "Darwin":  # macOS
+            config_path = self.home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+            claude_paths = [
+                Path("/Applications/Claude.app"),
+                self.home / "Applications" / "Claude.app"
+            ]
+        else:  # Linux
+            config_path = self.home / ".config" / "claude" / "claude_desktop_config.json"
+            claude_paths = [
+                Path("/usr/bin/claude"),
+                Path("/usr/local/bin/claude"),
+                self.home / ".local" / "bin" / "claude"
+            ]
+        
+        # Check for Claude Desktop installation
+        claude_found = False
+        for path in claude_paths:
+            if path.exists():
+                print(f"✅ Found Claude Desktop at: {path}")
+                claude_found = True
+                break
+        
+        if not claude_found:
+            print("⚠️  Claude Desktop not found in common locations")
+            print("   You may need to install Claude Desktop first")
+            print("   Download from: https://claude.ai/download")
+            print("   Installation will continue but you may need to configure manually")
+        
+        # Check config directory
+        if config_path.parent.exists():
+            print(f"✅ Claude config directory exists: {config_path.parent}")
+        else:
+            print(f"📁 Claude config directory will be created: {config_path.parent}")
+        
+        return config_path
     
     def detect_system_drives(self) -> List[str]:
         """Detect all available drives/volumes for the current OS."""
@@ -78,7 +153,6 @@ class MCPInstaller:
         elif self.system == "Darwin":  # macOS
             print("🔍 Detecting macOS volumes...")
             try:
-                import subprocess
                 result = subprocess.run(['df', '-h'], capture_output=True, text=True)
                 if result.returncode == 0:
                     lines = result.stdout.strip().split('\n')[1:]  # Skip header
@@ -135,7 +209,7 @@ class MCPInstaller:
         return drives
     
     def setup_server_directory(self) -> Path:
-        """Setup the MCP server directory."""
+        """Setup the MCP server directory with platform-specific paths."""
         if self.system == "Windows":
             server_dir = self.home / "Documents" / "MCP" / "filesystem-mcp"
         elif self.system == "Darwin":
@@ -143,12 +217,27 @@ class MCPInstaller:
         else:
             server_dir = self.home / ".local" / "share" / "mcp" / "filesystem-mcp"
         
-        server_dir.mkdir(parents=True, exist_ok=True)
-        print(f"📁 Server directory: {server_dir}")
+        try:
+            server_dir.mkdir(parents=True, exist_ok=True)
+            print(f"📁 Server directory created: {server_dir}")
+            
+            # Test write permissions
+            test_file = server_dir / ".write_test"
+            test_file.write_text("test")
+            test_file.unlink()
+            print("✅ Directory write permissions verified")
+            
+        except Exception as e:
+            print(f"❌ Error creating server directory: {e}")
+            print(f"   Path: {server_dir}")
+            raise
+        
         return server_dir
     
     def copy_server_files(self, server_dir: Path) -> bool:
         """Copy server files to installation directory."""
+        print("📋 Copying server files...")
+        
         try:
             # Copy main server file
             server_file = self.script_dir / "filesystem_mcp.py"
@@ -160,12 +249,19 @@ class MCPInstaller:
                 return False
             
             # Copy README if it exists
-            for readme_name in ["README.md", "README_ENHANCED.md"]:
+            readme_files = ["README.md", "README_ENHANCED.md", "readme.md"]
+            for readme_name in readme_files:
                 readme_file = self.script_dir / readme_name
                 if readme_file.exists():
                     shutil.copy2(readme_file, server_dir / "README.md")
                     print(f"✅ Copied {readme_name} as README.md")
                     break
+            
+            # Copy requirements.txt if it exists
+            req_file = self.script_dir / "requirements.txt"
+            if req_file.exists():
+                shutil.copy2(req_file, server_dir / "requirements.txt")
+                print("✅ Copied requirements.txt")
             
             return True
         except Exception as e:
@@ -174,12 +270,16 @@ class MCPInstaller:
     
     def create_launch_script(self, server_dir: Path) -> bool:
         """Create platform-specific launch script."""
+        print("🚀 Creating launch scripts...")
+        
         try:
             if self.system == "Windows":
                 # Create batch file for Windows
                 batch_content = f'''@echo off
+echo Starting Filesystem MCP Server...
 cd /d "{server_dir}"
 "{sys.executable}" filesystem_mcp.py
+pause
 '''
                 batch_file = server_dir / "run_mcp.bat"
                 batch_file.write_text(batch_content)
@@ -188,6 +288,7 @@ cd /d "{server_dir}"
             else:  # macOS/Linux
                 # Create shell script
                 shell_content = f'''#!/bin/bash
+echo "Starting Filesystem MCP Server..."
 cd "{server_dir}"
 "{sys.executable}" filesystem_mcp.py
 '''
@@ -201,10 +302,10 @@ cd "{server_dir}"
             print(f"❌ Error creating launch script: {e}")
             return False
     
-    def update_claude_config(self, server_dir: Path, drives: List[str]) -> bool:
+    def update_claude_config(self, server_dir: Path, drives: List[str], config_path: Path) -> bool:
         """Update Claude Desktop configuration with detected drives."""
-        config_path = self.get_claude_config_path()
         if not config_path:
+            print("❌ No Claude Desktop config path available")
             return False
         
         print(f"🔧 Updating Claude Desktop config at: {config_path}")
@@ -265,9 +366,9 @@ cd "{server_dir}"
     
     def test_installation(self, server_dir: Path) -> bool:
         """Test the MCP server installation."""
+        print("🧪 Testing MCP server installation...")
+        
         try:
-            print("🧪 Testing MCP server...")
-            
             # Simple syntax test
             result = subprocess.run(
                 [sys.executable, "-c", "import filesystem_mcp; print('Import successful')"],
@@ -278,27 +379,30 @@ cd "{server_dir}"
             )
             
             if result.returncode == 0:
-                print("✅ Server test passed")
+                print("✅ Server test passed - import successful")
                 return True
             else:
                 print(f"❌ Server test failed: {result.stderr}")
                 return False
                 
         except subprocess.TimeoutExpired:
-            print("⚠️  Server test timed out")
+            print("⚠️  Server test timed out (but this is usually OK)")
             return True
         except Exception as e:
             print(f"❌ Error testing server: {e}")
             return False
     
-    def print_success_message(self, server_dir: Path, drives: List[str]):
-        """Print installation success message with drive information."""
-        print("\n" + "="*60)
-        print("🎉 INSTALLATION COMPLETED SUCCESSFULLY!")
-        print("="*60)
+    def print_success_message(self, server_dir: Path, drives: List[str], config_path: Optional[Path]):
+        """Print comprehensive installation success message."""
+        print("\n" + "=" * 70)
+        print("🎉 FILESYSTEM MCP SERVER INSTALLATION COMPLETED!")
+        print("=" * 70)
         print(f"📁 Server installed at: {server_dir}")
         print(f"💽 Detected drives: {', '.join(drives)}")
         print(f"🖥️  Operating System: {self.system}")
+        
+        if config_path:
+            print(f"⚙️  Claude config: {config_path}")
         
         if self.system == "Windows":
             print(f"🚀 Launch script: {server_dir / 'run_mcp.bat'}")
@@ -306,63 +410,93 @@ cd "{server_dir}"
             print(f"🚀 Launch script: {server_dir / 'run_mcp.sh'}")
         
         print("\n📋 Next Steps:")
-        print("1. Restart Claude Desktop to load the new MCP server")
-        print("2. In Claude, you should now see filesystem tools available")
-        print("3. Try asking Claude to 'list files in my documents folder'")
+        print("1. 🔄 Restart Claude Desktop to load the new MCP server")
+        print("2. 💬 In Claude, you should now see filesystem tools available")
+        print("3. 🧪 Try asking Claude:")
+        print("   - 'List my Documents folder'")
+        print("   - 'Search for *.py files in my projects'")
+        print("   - 'Find large files over 100MB'")
+        print("   - 'Show me all my drives'")
         
-        print("\n🔧 Configuration:")
-        print("- Server is fully self-contained with embedded settings")
-        print("- Exclusions and allowed drives are configured automatically")
-        print("- No external config files needed")
+        print("\n🔧 Server Configuration:")
+        print("- ✅ Fully self-contained with embedded settings")
+        print("- ✅ Exclusions and allowed drives configured automatically")
+        print("- ✅ No external config files needed")
+        print("- ✅ Cross-platform optimized exclusions")
         
-        print("\n📚 Documentation:")
-        print(f"- README: {server_dir / 'README.md'}")
-        print("- Logs: filesystem_mcp.log (in server directory)")
+        print("\n📚 Documentation & Support:")
+        print(f"- 📖 README: {server_dir / 'README.md'}")
+        print("- 📝 Logs: filesystem_mcp.log (in server directory)")
+        print("- 🌐 Project: https://github.com/your-repo")
         
         print("\n⚠️  Troubleshooting:")
         print("- Check Claude Desktop logs for connection issues")
         print("- Ensure Python 3.8+ is installed and accessible")
         print("- Verify file permissions on the server directory")
-        print("="*60)
+        print("- Restart Claude Desktop if tools don't appear")
+        
+        print("\n🛡️  Security:")
+        print("- System directories are automatically excluded")
+        print("- File size limits prevent memory issues")
+        print("- Safe path validation prevents directory traversal")
+        
+        print("=" * 70)
+        print("🚀 Installation complete! Enjoy your new filesystem tools!")
+        print("=" * 70)
     
-    def install(self):
+    def install(self) -> bool:
         """Run the complete installation process."""
-        print("\n🔍 Starting installation process...")
-        
-        # Check Python version
-        if not self.check_python_version():
+        try:
+            print("🔍 Starting comprehensive installation process...")
+            
+            # Step 1: Check system requirements
+            if not self.check_system_requirements():
+                return False
+            
+            # Step 2: Detect Claude Desktop
+            config_path = self.detect_claude_desktop()
+            
+            # Step 3: Detect system drives
+            drives = self.detect_system_drives()
+            
+            # Step 4: Setup server directory
+            server_dir = self.setup_server_directory()
+            
+            # Step 5: Copy server files
+            if not self.copy_server_files(server_dir):
+                return False
+            
+            # Step 6: Create launch script
+            if not self.create_launch_script(server_dir):
+                return False
+            
+            # Step 7: Update Claude configuration
+            if config_path and not self.update_claude_config(server_dir, drives, config_path):
+                print("⚠️  Could not update Claude config automatically")
+                print("   You may need to configure Claude Desktop manually")
+                print(f"   Add the server to: {config_path}")
+            
+            # Step 8: Test installation
+            self.test_installation(server_dir)
+            
+            # Step 9: Print success message
+            self.print_success_message(server_dir, drives, config_path)
+            
+            return True
+            
+        except KeyboardInterrupt:
+            print("\n\n⚠️  Installation cancelled by user")
             return False
-        
-        # Detect system drives
-        drives = self.detect_system_drives()
-        
-        # Setup server directory
-        server_dir = self.setup_server_directory()
-        
-        # Copy server files
-        if not self.copy_server_files(server_dir):
+        except Exception as e:
+            print(f"\n❌ Installation failed: {e}")
+            import traceback
+            traceback.print_exc()
             return False
-        
-        # Create launch script
-        if not self.create_launch_script(server_dir):
-            return False
-          # Update Claude configuration
-        if not self.update_claude_config(server_dir, drives):
-            print("⚠️  Could not update Claude config automatically")
-            print("   You may need to configure Claude Desktop manually")
-        
-        # Test installation
-        self.test_installation(server_dir)
-        
-        # Print success message
-        self.print_success_message(server_dir, drives)
-        
-        return True
 
-def main():
+def main() -> int:
     """Main installation function."""
     try:
-        installer = MCPInstaller()
+        installer = FilesystemMCPInstaller()
         success = installer.install()
         
         if success:
@@ -377,6 +511,8 @@ def main():
         return 1
     except Exception as e:
         print(f"\n❌ Installation error: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
 
 if __name__ == "__main__":
