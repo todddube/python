@@ -246,8 +246,7 @@ class FilesystemMCPInstaller:
                 print("✅ Copied filesystem_mcp.py")
             else:
                 print("❌ filesystem_mcp.py not found!")
-                return False
-            
+                return False            
             # Copy README if it exists
             readme_files = ["README.md", "README_ENHANCED.md", "readme.md"]
             for readme_name in readme_files:
@@ -256,7 +255,8 @@ class FilesystemMCPInstaller:
                     shutil.copy2(readme_file, server_dir / "README.md")
                     print(f"✅ Copied {readme_name} as README.md")
                     break
-              # Copy requirements.txt if it exists
+            
+            # Copy requirements.txt if it exists
             req_file = self.script_dir / "requirements.txt"
             if req_file.exists():
                 shutil.copy2(req_file, server_dir / "requirements.txt")
@@ -273,21 +273,18 @@ class FilesystemMCPInstaller:
         
         try:
             if self.system == "Windows":
-                # Create batch file for Windows
+                # Create batch file for Windows - no echo to avoid interfering with MCP JSON protocol
                 batch_content = f'''@echo off
-echo Starting Filesystem MCP Server...
 cd /d "{server_dir}"
 "{sys.executable}" filesystem_mcp.py
-pause
 '''
                 batch_file = server_dir / "run_mcp.bat"
                 batch_file.write_text(batch_content)
                 print("✅ Created run_mcp.bat")
                 
             else:  # macOS/Linux
-                # Create shell script
+                # Create shell script - no echo for MCP compatibility
                 shell_content = f'''#!/bin/bash
-echo "Starting Filesystem MCP Server..."
 cd "{server_dir}"
 "{sys.executable}" filesystem_mcp.py
 '''
