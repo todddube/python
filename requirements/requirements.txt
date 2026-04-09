@@ -31,7 +31,7 @@ cloudevents==1.11.0
 cloudpickle==2.2.1
 cookiecutter==2.6.0
 crashtest==0.4.1
-cryptography==46.0.6
+cryptography==46.0.7
 databricks==0.2
 databricks-sdk==0.32.2
 defusedxml==0.7.1
