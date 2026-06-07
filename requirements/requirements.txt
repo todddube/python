@@ -155,7 +155,7 @@ trove-classifiers==2024.3.3
 types-python-dateutil==2.9.0.20241003
 typing_extensions==4.12.2
 tzdata==2023.4
-urllib3==2.6.3
+urllib3==2.7.0
 virtualenv==20.36.1
 Werkzeug==3.1.6
 wrapt==1.17.2
