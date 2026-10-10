@@ -139,8 +139,8 @@ termcolor==2.4.0
 threadpoolctl==3.4.0
 timer==0.2.2
 tokenizers==0.19.1
-torch==2.8.0
-tornado==6.5.5
+torch==2.12.0
+tornado==6.5.6
 tqdm==4.66.3
 traitlets==5.14.1
 transformers==5.0.0rc3
@@ -156,4 +156,4 @@ wheel==0.46.2
 wrapt==1.16.0
 wsproto==1.2.0
 yarl==1.9.4
-zeroconf==0.149.7
+zeroconf==0.149.12
